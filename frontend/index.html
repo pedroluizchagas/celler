@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Meta tags para tema -->
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="theme-color"
+      content="#ff0000"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#1a1a1a"
+      media="(prefers-color-scheme: dark)"
+    />
+
+    <!-- SEO e PWA -->
+    <title>Saymon Cell - Assistência Técnica</title>
+    <meta
+      name="description"
+      content="Sistema completo de assistência técnica para dispositivos móveis - Saymon Cell"
+    />
+    <meta
+      name="keywords"
+      content="assistência técnica, celular, smartphone, reparo, Saymon Cell"
+    />
+    <meta name="author" content="Saymon Cell" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://saymon-cell.com/" />
+    <meta property="og:title" content="Saymon Cell - Assistência Técnica" />
+    <meta
+      property="og:description"
+      content="Sistema completo de assistência técnica para dispositivos móveis"
+    />
+    <meta property="og:image" content="/logo-saymon-cell.png" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://saymon-cell.com/" />
+    <meta
+      property="twitter:title"
+      content="Saymon Cell - Assistência Técnica"
+    />
+    <meta
+      property="twitter:description"
+      content="Sistema completo de assistência técnica para dispositivos móveis"
+    />
+    <meta property="twitter:image" content="/logo-saymon-cell.png" />
+
+    <!-- PWA -->
+    <meta name="application-name" content="Saymon Cell" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Saymon Cell" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="msapplication-config" content="/browserconfig.xml" />
+    <meta name="msapplication-TileColor" content="#ff0000" />
+    <meta name="msapplication-tap-highlight" content="no" />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Preload critical resources -->
+    <link rel="preload" href="/src/main.jsx" as="script" />
+
+    <!-- Evitar flash durante carregamento -->
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+          sans-serif;
+        background-color: #f9fafb;
+        color: #1a1a1a;
+        transition: none;
+      }
+
+      /* Loading Screen Futurístico */
+      #loading-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+          135deg,
+          #0a0a0a 0%,
+          #1a1a1a 50%,
+          #0a0a0a 100%
+        );
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+        transition: opacity 0.5s ease-out, visibility 0.5s ease-out;
+      }
+
+      #loading-screen.fade-out {
+        opacity: 0;
+        visibility: hidden;
+      }
+
+      /* Logo animado */
+      .loading-logo {
+        font-size: 3.5rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #ff0000, #ff0040);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 2rem;
+        animation: pulse-glow 2s ease-in-out infinite;
+        text-align: center;
+        letter-spacing: 2px;
+      }
+
+      /* Spinner moderno */
+      .modern-spinner {
+        width: 80px;
+        height: 80px;
+        border: 4px solid rgba(255, 0, 0, 0.1);
+        border-top: 4px solid #ff0000;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 2rem;
+        box-shadow: 0 0 20px rgba(255, 0, 0, 0.3),
+          inset 0 0 20px rgba(255, 0, 0, 0.1);
+      }
+
+      /* Texto de loading */
+      .loading-text {
+        color: #ffffff;
+        font-size: 1.2rem;
+        font-weight: 500;
+        margin-bottom: 1rem;
+        animation: fade-pulse 2s ease-in-out infinite;
+        text-align: center;
+      }
+
+      /* Versão */
+      .loading-version {
+        color: #ff0040;
+        font-size: 0.9rem;
+        font-weight: 600;
+        opacity: 0.8;
+        animation: glow-text 3s ease-in-out infinite;
+      }
+
+      /* Animações */
+      @keyframes pulse-glow {
+        0%,
+        100% {
+          text-shadow: 0 0 10px #ff0000, 0 0 20px #ff0000, 0 0 30px #ff0000;
+          transform: scale(1);
+        }
+        50% {
+          text-shadow: 0 0 20px #ff0000, 0 0 30px #ff0000, 0 0 40px #ff0000,
+            0 0 50px #ff0040;
+          transform: scale(1.05);
+        }
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes fade-pulse {
+        0%,
+        100% {
+          opacity: 0.7;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+
+      @keyframes glow-text {
+        0%,
+        100% {
+          text-shadow: 0 0 5px #ff0040;
+          opacity: 0.8;
+        }
+        50% {
+          text-shadow: 0 0 15px #ff0040, 0 0 25px #ff0040;
+          opacity: 1;
+        }
+      }
+
+      /* Responsivo */
+      @media (max-width: 768px) {
+        .loading-logo {
+          font-size: 2.5rem;
+        }
+        .modern-spinner {
+          width: 60px;
+          height: 60px;
+        }
+        .loading-text {
+          font-size: 1rem;
+        }
+      }
+
+      /* Reduzir animações se solicitado */
+      @media (prefers-reduced-motion: reduce) {
+        .loading-logo,
+        .modern-spinner,
+        .loading-text,
+        .loading-version {
+          animation: none !important;
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        body {
+          background-color: #1a1a1a;
+          color: #ffffff;
+        }
+
+        #loading-screen {
+          background: linear-gradient(135deg, #1a1a1a 0%, #000000 100%);
+          border: 2px solid #ff0000;
+          box-shadow: inset 0 0 50px rgba(255, 0, 0, 0.1);
+        }
+
+        .loading-logo {
+          text-shadow: 0 0 20px #ff0000, 0 0 30px #ff0000, 0 0 40px #ff0000;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+      <div class="loading-content">
+        <div class="loading-logo">📱</div>
+        <div class="loading-text">Saymon Cell</div>
+        <div class="loading-subtitle">Carregando sistema...</div>
+      </div>
+    </div>
+
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+
+    <!-- Script para remover loading screen -->
+    <script>
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          const loadingScreen = document.getElementById('loading-screen')
+          if (loadingScreen) {
+            loadingScreen.classList.add('fade-out')
+            setTimeout(() => {
+              loadingScreen.remove()
+            }, 300)
+          }
+        }, 500)
+      })
+    </script>
+  </body>
+</html>

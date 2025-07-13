@@ -1,0 +1,2 @@
+# Este arquivo mantém o diretório uploads versionado no Git
+# Os uploads reais são ignorados pelo .gitignore 

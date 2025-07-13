@@ -1,0 +1,2 @@
+# Este arquivo mantém o diretório backups versionado no Git
+# Os arquivos de backup reais são ignorados pelo .gitignore 

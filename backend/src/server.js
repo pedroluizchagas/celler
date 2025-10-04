@@ -84,26 +84,48 @@ if (whatsappEnabled) {
 
 // Middlewares
 app.use(helmet())
-app.use(
-  cors({
-    origin: [
+
+// Configuração CORS mais robusta
+const corsOptions = {
+  origin: function (origin, callback) {
+    const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:5173',
       'http://localhost:8080',
       'http://localhost:49242',
       'http://localhost:51740',
       'http://127.0.0.1:5173',
-      'http://192.168.1.*',
       'https://assistencia-tecnica-mu.vercel.app',
       'https://assistencia-tecnica-frontend.vercel.app',
       'https://assistencia-tecnica-saytech.vercel.app',
-      /^https:\/\/.*\.vercel\.app$/,
-    ], // Permite acesso local e da rede + produção
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  })
-)
+    ]
+    
+    // Permitir requisições sem origin (ex: Postman, curl)
+    if (!origin) return callback(null, true)
+    
+    // Verificar se é um domínio Vercel
+    if (origin.match(/^https:\/\/.*\.vercel\.app$/)) {
+      console.log('✅ CORS: Permitindo domínio Vercel:', origin)
+      return callback(null, true)
+    }
+    
+    // Verificar lista de origens permitidas
+    if (allowedOrigins.includes(origin)) {
+      console.log('✅ CORS: Permitindo origem:', origin)
+      return callback(null, true)
+    }
+    
+    console.log('❌ CORS: Bloqueando origem:', origin)
+    callback(new Error('Não permitido pelo CORS'))
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Origin', 'Accept'],
+  exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar'],
+  optionsSuccessStatus: 200 // Para suportar navegadores legados
+}
+
+app.use(cors(corsOptions))
 
 // Sistema de logs
 app.use(requestLogger)

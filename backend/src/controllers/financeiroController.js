@@ -1016,11 +1016,28 @@ class FinanceiroController {
   // Dashboard financeiro
   async dashboardFinanceiro(req, res) {
     try {
-      const hoje = new Date()
-      const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
-      const ultimoDiaMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0)
+      LoggerManager.info('🔍 Carregando dashboard financeiro...')
 
-      const formatDate = (date) => date.toISOString().split('T')[0]
+      // Verificar se a tabela fluxo_caixa existe
+      try {
+        await db.get('SELECT COUNT(*) FROM fluxo_caixa LIMIT 1')
+        LoggerManager.info('✅ Tabela fluxo_caixa encontrada')
+      } catch (tableError) {
+        LoggerManager.warn('⚠️ Tabela fluxo_caixa não encontrada, retornando dados padrão')
+        return res.json({
+          success: true,
+          data: {
+            saldoAtual: 0,
+            entradas: {
+              total: 0,
+            },
+            saidas: {
+              total: 0,
+            },
+            message: 'Sistema financeiro não configurado ainda'
+          },
+        })
+      }
 
       // Saldo atual (até hoje)
       const saldoAtual = await db.get(`
@@ -1028,28 +1045,31 @@ class FinanceiroController {
           COALESCE(SUM(CASE WHEN tipo = 'entrada' THEN valor ELSE 0 END), 0) as total_entradas,
           COALESCE(SUM(CASE WHEN tipo = 'saida' THEN valor ELSE 0 END), 0) as total_saidas
         FROM fluxo_caixa 
-        WHERE data_movimentacao <= date('now')
+        WHERE data_movimentacao <= CURRENT_DATE
       `)
 
-      const saldo = saldoAtual.total_entradas - saldoAtual.total_saidas
+      const saldo = (saldoAtual?.total_entradas || 0) - (saldoAtual?.total_saidas || 0)
+
+      LoggerManager.info('✅ Dashboard financeiro carregado com sucesso')
 
       res.json({
         success: true,
         data: {
           saldoAtual: saldo,
           entradas: {
-            total: saldoAtual.total_entradas,
+            total: saldoAtual?.total_entradas || 0,
           },
           saidas: {
-            total: saldoAtual.total_saidas,
+            total: saldoAtual?.total_saidas || 0,
           },
         },
       })
     } catch (error) {
-      LoggerManager.error('Erro ao carregar dashboard financeiro', error)
+      LoggerManager.error('❌ Erro ao carregar dashboard financeiro:', error)
       res.status(500).json({
         success: false,
         error: 'Erro interno do servidor',
+        details: error.message
       })
     }
   }

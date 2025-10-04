@@ -9,7 +9,7 @@ router.post('/', validateProduto, produtoController.store)
 router.get('/stats', produtoController.stats)
 router.get('/debug', async (req, res) => {
   try {
-    const db = require('../utils/database')
+    const db = require('../utils/database-adapter')
     const produtos = await db.all(
       'SELECT id, nome, estoque_atual, estoque_minimo, ativo FROM produtos ORDER BY id'
     )

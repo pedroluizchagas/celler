@@ -3,7 +3,7 @@ const fs = require('fs')
 
 // Configurar ambiente de teste
 process.env.NODE_ENV = 'test'
-process.env.DATABASE_PATH = ':memory:' // SQLite em memória para testes
+process.env.DATABASE_TYPE = 'supabase' // Usar Supabase para testes
 
 // Timeout padrão para testes
 jest.setTimeout(10000)

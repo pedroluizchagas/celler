@@ -1,4 +1,4 @@
-const db = require('../utils/database')
+const db = require('../utils/database-adapter')
 const { LoggerManager } = require('../utils/logger')
 
 class WhatsAppBot {
@@ -291,7 +291,7 @@ class WhatsAppBot {
     try {
       return await db.all(
         `
-        SELECT id, equipamento, defeito, status, data_entrada, 
+        SELECT id, equipamento, defeito_relatado as defeito, status, data_entrada, 
                valor_orcamento, valor_final, data_prazo
         FROM ordens 
         WHERE cliente_id = ? AND status != 'entregue'

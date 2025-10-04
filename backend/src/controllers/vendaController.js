@@ -1,4 +1,4 @@
-const db = require('../utils/database')
+const db = require('../utils/database-adapter')
 const { LoggerManager } = require('../utils/logger')
 
 class VendaController {

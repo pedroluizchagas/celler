@@ -1,9 +1,10 @@
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js')
+const { Client, NoAuth, MessageMedia } = require('whatsapp-web.js')
 const qrcode = require('qrcode-terminal')
+const QRCode = require('qrcode')
 const cron = require('node-cron')
 const fs = require('fs')
 const path = require('path')
-const db = require('../utils/database')
+const db = require('../utils/database-adapter')
 const { LoggerManager } = require('../utils/logger')
 const WhatsAppBot = require('./whatsappBot')
 
@@ -19,11 +20,11 @@ class WhatsAppService {
   }
 
   initializeClient() {
-    this.client = new Client({
-      authStrategy: new LocalAuth({
-        clientId: 'saymon-cell-whatsapp',
-        dataPath: this.sessionPath,
-      }),
+    // Para produção, usar NoAuth para evitar dependência SQLite
+    // Em desenvolvimento, pode usar LocalAuth se SQLite estiver disponível
+    const isProduction = process.env.NODE_ENV === 'production'
+    
+    const clientConfig = {
       puppeteer: {
         headless: true,
         args: [
@@ -35,10 +36,32 @@ class WhatsAppService {
           '--no-zygote',
           '--single-process',
           '--disable-gpu',
+          '--disable-web-security',
+          '--disable-features=VizDisplayCompositor',
         ],
       },
-    })
+    }
 
+    // Em produção, usar NoAuth (requer QR a cada reinício)
+    if (isProduction) {
+      clientConfig.authStrategy = new NoAuth()
+      LoggerManager.info('🔧 WhatsApp configurado para produção (NoAuth)')
+    } else {
+      // Em desenvolvimento, tentar LocalAuth se disponível
+      try {
+        const { LocalAuth } = require('whatsapp-web.js')
+        clientConfig.authStrategy = new LocalAuth({
+          clientId: 'saymon-cell-whatsapp',
+          dataPath: this.sessionPath,
+        })
+        LoggerManager.info('🔧 WhatsApp configurado para desenvolvimento (LocalAuth)')
+      } catch (error) {
+        clientConfig.authStrategy = new NoAuth()
+        LoggerManager.warn('⚠️ LocalAuth não disponível, usando NoAuth')
+      }
+    }
+
+    this.client = new Client(clientConfig)
     this.setupEventListeners()
   }
 
@@ -90,7 +113,6 @@ class WhatsAppService {
 
   async start() {
     try {
-      LoggerManager.info('🔄 Iniciando WhatsApp Service...')
       await this.client.initialize()
     } catch (error) {
       LoggerManager.error('❌ Erro ao iniciar WhatsApp Service:', error)
@@ -284,13 +306,43 @@ class WhatsAppService {
 
   async saveQRCode(qr) {
     try {
-      await db.run(
-        `
-        INSERT OR REPLACE INTO whatsapp_qr (id, qr_code, created_at)
-        VALUES (1, ?, CURRENT_TIMESTAMP)
-      `,
-        [qr]
-      )
+      LoggerManager.info('🔄 Gerando QR Code base64...')
+      
+      // Gerar QR Code como base64
+      const qrBase64 = await QRCode.toDataURL(qr, {
+        width: 256,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF'
+        }
+      })
+
+      LoggerManager.info(`✅ QR Code base64 gerado: ${qrBase64.substring(0, 50)}...`)
+
+      // Verificar se já existe um registro
+      const existing = await db.get('whatsapp_qr', 1)
+      
+      let result
+      if (existing) {
+        // Atualizar registro existente
+        result = await db.update('whatsapp_qr', 1, {
+          qr_code: qr,
+          qr_base64: qrBase64,
+          created_at: new Date().toISOString()
+        })
+      } else {
+        // Inserir novo registro
+        result = await db.insert('whatsapp_qr', {
+          id: 1,
+          qr_code: qr,
+          qr_base64: qrBase64,
+          created_at: new Date().toISOString()
+        })
+      }
+
+      LoggerManager.info('✅ QR Code salvo no banco de dados com sucesso!')
+      LoggerManager.info(`📊 Resultado: ${JSON.stringify(result)}`)
     } catch (error) {
       LoggerManager.error('❌ Erro ao salvar QR Code:', error)
     }
@@ -298,10 +350,28 @@ class WhatsAppService {
 
   async getQRCode() {
     try {
+      LoggerManager.info('🔍 Buscando QR Code no banco de dados...')
+      LoggerManager.info('🔍 Tentando buscar com ID 1...')
+      
       const result = await db.get(
-        'SELECT qr_code FROM whatsapp_qr WHERE id = 1'
+        'SELECT qr_code, qr_base64 FROM whatsapp_qr WHERE id = 1'
       )
-      return result?.qr_code || null
+      
+      LoggerManager.info(`📊 Resultado da consulta: ${JSON.stringify(result)}`)
+      
+      // Tentar buscar todos os registros para debug
+      LoggerManager.info('🔍 Buscando todos os registros da tabela...')
+      const allRecords = await db.all('SELECT * FROM whatsapp_qr')
+      LoggerManager.info(`📊 Todos os registros: ${JSON.stringify(allRecords)}`)
+      
+      const response = {
+        qr_code: result?.qr_code || null,
+        qr_base64: result?.qr_base64 || null
+      }
+      
+      LoggerManager.info(`📤 Retornando: ${JSON.stringify(response)}`)
+      
+      return response
     } catch (error) {
       LoggerManager.error('❌ Erro ao buscar QR Code:', error)
       return null
@@ -396,24 +466,38 @@ class WhatsAppService {
       }
 
       // Estatísticas da semana
-      const stats = await db.get(`
-        SELECT 
-          COUNT(*) as total_ordens,
-          COUNT(CASE WHEN status = 'entregue' THEN 1 END) as entregues,
-          COUNT(CASE WHEN status = 'pronto' THEN 1 END) as prontas,
-          SUM(CASE WHEN status = 'entregue' THEN valor_final ELSE 0 END) as faturamento
-        FROM ordens 
-        WHERE created_at >= date('now', '-7 days')
-      `)
+      // Estatísticas de ordens (com fallback)
+      let stats
+      try {
+        stats = await db.get(`
+          SELECT 
+            COUNT(*) as total_ordens,
+            COUNT(CASE WHEN status = 'entregue' THEN 1 END) as entregues,
+            COUNT(CASE WHEN status = 'pronto' THEN 1 END) as prontas,
+            SUM(CASE WHEN status = 'entregue' THEN valor_final ELSE 0 END) as faturamento
+          FROM ordens 
+          WHERE created_at >= NOW() - INTERVAL '7 days'
+        `) || { total_ordens: 0, entregues: 0, prontas: 0, faturamento: 0 }
+      } catch (error) {
+        LoggerManager.warn('Erro ao buscar estatísticas de ordens:', error.message)
+        stats = { total_ordens: 0, entregues: 0, prontas: 0, faturamento: 0 }
+      }
 
-      const whatsappStats = await db.get(`
-        SELECT 
-          COUNT(*) as total_mensagens,
-          COUNT(CASE WHEN direction = 'received' THEN 1 END) as recebidas,
-          COUNT(DISTINCT phone_number) as contatos_unicos
-        FROM whatsapp_messages 
-        WHERE created_at >= datetime('now', '-7 days')
-      `)
+      // Estatísticas WhatsApp (com fallback)
+      let whatsappStats
+      try {
+        whatsappStats = await db.get(`
+          SELECT 
+            COUNT(*) as total_mensagens,
+            COUNT(CASE WHEN direction = 'received' THEN 1 END) as recebidas,
+            COUNT(DISTINCT phone_number) as contatos_unicos
+          FROM whatsapp_messages 
+          WHERE created_at >= NOW() - INTERVAL '7 days'
+        `) || { total_mensagens: 0, recebidas: 0, contatos_unicos: 0 }
+      } catch (error) {
+        LoggerManager.warn('Erro ao buscar estatísticas WhatsApp:', error.message)
+        whatsappStats = { total_mensagens: 0, recebidas: 0, contatos_unicos: 0 }
+      }
 
       const message = `📊 *Relatório Semanal - Saymon Cell*\n\n📋 *Ordens de Serviço:*\n• Total: ${
         stats.total_ordens

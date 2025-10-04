@@ -4,11 +4,13 @@ const helmet = require('helmet')
 const path = require('path')
 require('dotenv').config()
 
+// Forçando restart do nodemon para testar migração SQLite -> PostgreSQL
+
 // Importar sistema de logs
 const { LoggerManager, requestLogger, errorLogger } = require('./utils/logger')
 
 // Importar banco de dados
-const db = require('./utils/database')
+const db = require('./utils/database-adapter')
 
 // Importar sistema de backup
 const backupManager = require('./utils/backup')
@@ -37,6 +39,9 @@ const PORT = process.env.PORT || 3001
 const whatsappService = new WhatsAppService()
 const whatsappController = new WhatsAppController(whatsappService)
 
+console.log('🔧 WhatsApp Controller instanciado:', !!whatsappController)
+console.log('🔧 Método getQRCode disponível:', typeof whatsappController.getQRCode)
+
 // Middlewares
 app.use(helmet())
 app.use(
@@ -44,6 +49,9 @@ app.use(
     origin: [
       'http://localhost:3000',
       'http://localhost:5173',
+      'http://localhost:8080',
+      'http://localhost:49242',
+      'http://localhost:51740',
       'http://127.0.0.1:5173',
       'http://192.168.1.*',
     ], // Permite acesso local e da rede

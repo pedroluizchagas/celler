@@ -1,0 +1,155 @@
+services:
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.production
+    container_name: assistencia-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - ./backend/.env.production
+    volumes:
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+      - ./ssl:/app/ssl:ro
+    networks:
+      - assistencia-network
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.production
+    container_name: assistencia-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./frontend/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - assistencia-network
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Cache (opcional)
+  redis:
+    image: redis:7-alpine
+    container_name: assistencia-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - assistencia-network
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx Proxy (opcional - para múltiplos domínios)
+  # nginx-proxy:
+  #   image: nginx:alpine
+  #   container_name: assistencia-proxy
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx-proxy.conf:/etc/nginx/nginx.conf:ro
+  #     - ./ssl:/etc/nginx/ssl:ro
+  #     - /var/run/docker.sock:/tmp/docker.sock:ro
+  #   networks:
+  #     - assistencia-network
+  #   depends_on:
+  #     - frontend
+  #     - backend
+
+  # Backup Service (opcional)
+  # backup:
+  #   build:
+  #     context: ./scripts
+  #     dockerfile: Dockerfile.backup
+  #   container_name: assistencia-backup
+  #   restart: unless-stopped
+  #   environment:
+  #     - BACKUP_SCHEDULE=0 2 * * *
+  #   env_file:
+  #     - ./backend/.env.production
+  #   volumes:
+  #     - ./backups:/app/backups
+  #     - ./logs:/app/logs:ro
+  #   networks:
+  #     - assistencia-network
+  #   depends_on:
+  #     - backend
+
+  # Monitoring (opcional)
+  # monitoring:
+  #   image: prom/prometheus:latest
+  #   container_name: assistencia-monitoring
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #     - prometheus-data:/prometheus
+  #   networks:
+  #     - assistencia-network
+  #   command:
+  #     - '--config.file=/etc/prometheus/prometheus.yml'
+  #     - '--storage.tsdb.path=/prometheus'
+  #     - '--web.console.libraries=/etc/prometheus/console_libraries'
+  #     - '--web.console.templates=/etc/prometheus/consoles'
+
+volumes:
+  redis-data:
+    driver: local
+  prometheus-data:
+    driver: local
+
+networks:
+  assistencia-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+# ===================================
+# INSTRUÇÕES DE DEPLOY
+# ===================================
+
+# 1. Configurar variáveis de ambiente nos arquivos .env.production
+# 2. Criar certificados SSL na pasta ./ssl/
+# 3. Configurar nginx.conf para seu domínio
+# 4. Executar: docker-compose -f docker-compose.production.yml up -d
+# 5. Verificar logs: docker-compose -f docker-compose.production.yml logs -f
+# 6. Monitorar saúde: docker-compose -f docker-compose.production.yml ps
+
+# Para atualizar:
+# docker-compose -f docker-compose.production.yml pull
+# docker-compose -f docker-compose.production.yml up -d --force-recreate
+
+# Para backup manual:
+# docker-compose -f docker-compose.production.yml exec backup /app/backup.sh

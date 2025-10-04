@@ -1,4 +1,4 @@
-const db = require('./database')
+const db = require('./database-adapter')
 
 // Categorias iniciais
 const categoriasIniciais = [
@@ -112,17 +112,13 @@ async function inserirDadosIniciais() {
     // Inserir categorias
     console.log('📁 Inserindo categorias...')
     for (const categoria of categoriasIniciais) {
-      const existe = await db.get('SELECT id FROM categorias WHERE nome = ?', [
-        categoria.nome,
-      ])
+      const existe = await db.findOne('categorias', { nome: categoria.nome })
       if (!existe) {
-        await db.run(
-          `
-          INSERT INTO categorias (nome, descricao, icone)
-          VALUES (?, ?, ?)
-        `,
-          [categoria.nome, categoria.descricao, categoria.icone]
-        )
+        await db.insert('categorias', {
+          nome: categoria.nome,
+          descricao: categoria.descricao,
+          icone: categoria.icone
+        })
         console.log(`✅ Categoria '${categoria.nome}' criada`)
       }
     }
@@ -130,24 +126,15 @@ async function inserirDadosIniciais() {
     // Inserir categorias financeiras
     console.log('💰 Inserindo categorias financeiras...')
     for (const categoria of categoriasFinanceirasIniciais) {
-      const existe = await db.get(
-        'SELECT id FROM categorias_financeiras WHERE nome = ?',
-        [categoria.nome]
-      )
+      const existe = await db.findOne('categorias_financeiras', { nome: categoria.nome })
       if (!existe) {
-        await db.run(
-          `
-          INSERT INTO categorias_financeiras (nome, descricao, tipo, icone, cor)
-          VALUES (?, ?, ?, ?, ?)
-        `,
-          [
-            categoria.nome,
-            categoria.descricao,
-            categoria.tipo,
-            categoria.icone,
-            categoria.cor,
-          ]
-        )
+        await db.insert('categorias_financeiras', {
+          nome: categoria.nome,
+          descricao: categoria.descricao,
+          tipo: categoria.tipo,
+          icone: categoria.icone,
+          cor: categoria.cor
+        })
         console.log(`✅ Categoria financeira '${categoria.nome}' criada`)
       }
     }
@@ -171,22 +158,16 @@ async function limparDadosExemplo() {
     console.log('🧹 Limpando dados de exemplo...')
 
     // Remover alertas relacionados aos produtos de exemplo
-    await db.run('DELETE FROM alertas_estoque')
+    await db.run('DELETE FROM alertas_estoque', [])
     console.log('✅ Alertas de exemplo removidos')
 
     // Remover movimentações relacionadas aos produtos de exemplo
-    await db.run('DELETE FROM movimentacoes_estoque')
+    await db.run('DELETE FROM movimentacoes_estoque', [])
     console.log('✅ Movimentações de exemplo removidas')
 
     // Remover produtos de exemplo
-    await db.run('DELETE FROM produtos')
+    await db.run('DELETE FROM produtos', [])
     console.log('✅ Produtos de exemplo removidos')
-
-    // Resetar sequências (auto-increment)
-    await db.run(
-      'DELETE FROM sqlite_sequence WHERE name IN ("produtos", "movimentacoes_estoque", "alertas_estoque")'
-    )
-    console.log('✅ Sequências resetadas')
 
     console.log('🎉 Sistema limpo com sucesso!')
     console.log('📝 Agora você pode cadastrar seus produtos reais')

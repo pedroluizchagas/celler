@@ -63,6 +63,7 @@ export default function WhatsApp() {
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrCode, setQrCode] = useState(null)
   const [stats, setStats] = useState(null)
+  const [qrRefreshInterval, setQrRefreshInterval] = useState(null)
 
   // Carregar dados iniciais
   useEffect(() => {
@@ -71,6 +72,29 @@ export default function WhatsApp() {
     const interval = setInterval(loadStatus, 10000)
     return () => clearInterval(interval)
   }, [])
+
+  // Gerenciar refresh automático do QR Code
+  useEffect(() => {
+    if (qrDialogOpen) {
+      // Refresh automático a cada 30 segundos
+      const interval = setInterval(() => {
+        handleShowQR()
+      }, 30000)
+      setQrRefreshInterval(interval)
+      
+      return () => {
+        if (interval) {
+          clearInterval(interval)
+        }
+      }
+    } else {
+      // Limpar interval quando dialog fechar
+      if (qrRefreshInterval) {
+        clearInterval(qrRefreshInterval)
+        setQrRefreshInterval(null)
+      }
+    }
+  }, [qrDialogOpen])
 
   const loadInitialData = async () => {
     try {
@@ -109,12 +133,17 @@ export default function WhatsApp() {
   const handleShowQR = async () => {
     try {
       const response = await whatsappService.getQRCode()
-      setQrCode(response.data.qrCode)
+      setQrCode(response.data.qrBase64)
       setQrDialogOpen(true)
     } catch (err) {
       setError('Erro ao obter QR Code')
       console.error('Erro QR Code:', err)
     }
+  }
+
+  const handleCloseQR = () => {
+    setQrDialogOpen(false)
+    setQrCode(null)
   }
 
   const handleRefresh = () => {
@@ -322,7 +351,7 @@ export default function WhatsApp() {
       {/* Dialog QR Code */}
       <Dialog
         open={qrDialogOpen}
-        onClose={() => setQrDialogOpen(false)}
+        onClose={handleCloseQR}
         maxWidth="sm"
         fullWidth
       >
@@ -339,7 +368,7 @@ export default function WhatsApp() {
           {qrCode ? (
             <Box display="flex" justifyContent="center" p={2}>
               <img
-                src={`data:image/png;base64,${qrCode}`}
+                src={qrCode}
                 alt="QR Code WhatsApp"
                 style={{ maxWidth: '100%', height: 'auto' }}
               />
@@ -360,7 +389,7 @@ export default function WhatsApp() {
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setQrDialogOpen(false)}>Fechar</Button>
+          <Button onClick={handleCloseQR}>Fechar</Button>
           <Button onClick={handleShowQR} variant="contained">
             Atualizar QR
           </Button>

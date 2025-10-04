@@ -1,4 +1,4 @@
-const db = require('../utils/database')
+const db = require('../utils/database-adapter')
 const path = require('path')
 const fs = require('fs')
 
@@ -10,25 +10,15 @@ class OrdemController {
 
       let sql = `
         SELECT 
-          o.id, o.cliente_id, o.equipamento, o.defeito, o.status, o.data_entrada,
+          o.id, o.cliente_id, o.equipamento, o.defeito_relatado as defeito, o.status, o.data_entrada,
           o.created_at, o.updated_at,
-          COALESCE(o.marca, '') as marca,
           COALESCE(o.modelo, '') as modelo,
-          COALESCE(o.numero_serie, '') as numero_serie,
-          COALESCE(o.descricao, '') as descricao,
-          COALESCE(o.diagnostico, '') as diagnostico,
-          COALESCE(o.solucao, '') as solucao,
           COALESCE(o.prioridade, 'normal') as prioridade,
           COALESCE(o.valor_orcamento, 0) as valor_orcamento,
-          COALESCE(o.valor_mao_obra, 0) as valor_mao_obra,
-          COALESCE(o.valor_pecas, 0) as valor_pecas,
           COALESCE(o.valor_final, 0) as valor_final,
-          COALESCE(o.desconto, 0) as desconto,
-          o.data_prazo, o.data_finalizacao,
+          o.data_previsao, o.data_conclusao, o.data_entrega,
           COALESCE(o.tecnico_responsavel, '') as tecnico_responsavel,
           COALESCE(o.observacoes, '') as observacoes,
-          COALESCE(o.observacoes_internas, '') as observacoes_internas,
-          COALESCE(o.garantia_dias, 90) as garantia_dias,
           c.nome as cliente_nome, c.telefone as cliente_telefone, c.email as cliente_email
         FROM ordens o
         INNER JOIN clientes c ON o.cliente_id = c.id
@@ -88,25 +78,15 @@ class OrdemController {
       const ordem = await db.get(
         `
         SELECT 
-          o.id, o.cliente_id, o.equipamento, o.defeito, o.status, o.data_entrada,
+          o.id, o.cliente_id, o.equipamento, o.defeito_relatado as defeito, o.status, o.data_entrada,
           o.created_at, o.updated_at,
-          COALESCE(o.marca, '') as marca,
           COALESCE(o.modelo, '') as modelo,
-          COALESCE(o.numero_serie, '') as numero_serie,
-          COALESCE(o.descricao, '') as descricao,
-          COALESCE(o.diagnostico, '') as diagnostico,
-          COALESCE(o.solucao, '') as solucao,
           COALESCE(o.prioridade, 'normal') as prioridade,
           COALESCE(o.valor_orcamento, 0) as valor_orcamento,
-          COALESCE(o.valor_mao_obra, 0) as valor_mao_obra,
-          COALESCE(o.valor_pecas, 0) as valor_pecas,
           COALESCE(o.valor_final, 0) as valor_final,
-          COALESCE(o.desconto, 0) as desconto,
-          o.data_prazo, o.data_finalizacao,
+          o.data_previsao, o.data_conclusao, o.data_entrega,
           COALESCE(o.tecnico_responsavel, '') as tecnico_responsavel,
           COALESCE(o.observacoes, '') as observacoes,
-          COALESCE(o.observacoes_internas, '') as observacoes_internas,
-          COALESCE(o.garantia_dias, 90) as garantia_dias,
           c.nome as cliente_nome, c.telefone as cliente_telefone,
           c.email as cliente_email, c.endereco as cliente_endereco, c.cidade as cliente_cidade
         FROM ordens o
@@ -205,14 +185,14 @@ class OrdemController {
         descricao,
         diagnostico,
         solucao,
-        status = 'recebido',
+        status = 'aguardando',
         prioridade = 'normal',
         valor_orcamento,
         valor_mao_obra,
         valor_pecas,
         valor_final,
         desconto = 0,
-        data_prazo,
+        data_previsao,
         tecnico_responsavel,
         observacoes,
         observacoes_internas,
@@ -274,34 +254,24 @@ class OrdemController {
       const result = await db.run(
         `
         INSERT INTO ordens (
-          cliente_id, equipamento, marca, modelo, numero_serie,
-          defeito, descricao, diagnostico, solucao, status, prioridade,
-          valor_orcamento, valor_mao_obra, valor_pecas, valor_final, desconto,
-          data_prazo, tecnico_responsavel, observacoes, observacoes_internas, garantia_dias
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          cliente_id, equipamento, modelo,
+          defeito_relatado, observacoes, status, prioridade,
+          valor_orcamento, valor_final,
+          data_previsao, tecnico_responsavel
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         [
           cliente_id,
           equipamento,
-          marca || null,
           modelo || null,
-          numero_serie || null,
           defeito,
-          descricao || null,
-          diagnostico || null,
-          solucao || null,
+          observacoes || null,
           status,
           prioridade,
           valor_orcamento || null,
-          valor_mao_obra || null,
-          valor_pecas || null,
           valor_final || null,
-          desconto,
-          data_prazo || null,
+          data_previsao || null,
           tecnico_responsavel || null,
-          observacoes || null,
-          observacoes_internas || null,
-          garantia_dias,
         ]
       )
 
@@ -426,8 +396,8 @@ class OrdemController {
         valor_pecas,
         valor_final,
         desconto,
-        data_prazo,
-        data_finalizacao,
+        data_previsao,
+        data_conclusao,
         tecnico_responsavel,
         observacoes,
         observacoes_internas,
@@ -509,36 +479,26 @@ class OrdemController {
       await db.run(
         `
         UPDATE ordens SET
-          equipamento = ?, marca = ?, modelo = ?, numero_serie = ?,
-          defeito = ?, descricao = ?, diagnostico = ?, solucao = ?,
-          status = ?, prioridade = ?, valor_orcamento = ?, valor_mao_obra = ?,
-          valor_pecas = ?, valor_final = ?, desconto = ?, data_prazo = ?,
-          data_finalizacao = ?, tecnico_responsavel = ?, observacoes = ?,
-          observacoes_internas = ?, garantia_dias = ?, updated_at = CURRENT_TIMESTAMP
+          equipamento = ?, modelo = ?,
+          defeito_relatado = ?, observacoes = ?, status = ?, prioridade = ?,
+          valor_orcamento = ?, valor_final = ?,
+          data_previsao = ?, data_conclusao = ?, data_entrega = ?, tecnico_responsavel = ?,
+          updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `,
         [
           equipamento?.trim(),
-          marca?.trim() || null,
           modelo?.trim() || null,
-          numero_serie?.trim() || null,
           defeito?.trim(),
-          descricao?.trim() || null,
-          diagnostico?.trim() || null,
-          solucao?.trim() || null,
+          observacoes?.trim() || null,
           status,
           prioridade,
           valor_orcamento || null,
-          valor_mao_obra || null,
-          valor_pecas || null,
           valor_final || null,
-          desconto || 0,
-          data_prazo || null,
-          data_finalizacao || null,
+          data_previsao || null,
+          data_conclusao || null,
+          data_entrega || null,
           tecnico_responsavel?.trim() || null,
-          observacoes?.trim() || null,
-          observacoes_internas?.trim() || null,
-          garantia_dias || 90,
           id,
         ]
       )
@@ -735,86 +695,96 @@ class OrdemController {
   async stats(req, res) {
     try {
       // Total de ordens
-      const totalOrdens = await db.get('SELECT COUNT(*) as total FROM ordens')
+      const totalOrdens = await db.count('ordens')
 
       // Total de clientes
-      const totalClientes = await db.get(
-        'SELECT COUNT(*) as total FROM clientes'
-      )
+      const totalClientes = await db.count('clientes')
 
-      // Ordens por status
-      const ordemsPorStatus = await db.all(`
-        SELECT status, COUNT(*) as total 
-        FROM ordens 
-        GROUP BY status
-        ORDER BY total DESC
-      `)
+      // Buscar todas as ordens para calcular estatísticas
+      const todasOrdens = await db.all('ordens')
+      
+      // Calcular estatísticas básicas
+      const ordemsPorStatus = {}
+      const ordemsPorPrioridade = {}
+      let faturamentoTotal = 0
+      let faturamentoEntregue = 0
+      let faturamentoPendente = 0
 
-      // Ordens por prioridade
-      const ordemsPorPrioridade = await db.all(`
-        SELECT prioridade, COUNT(*) as total 
-        FROM ordens 
-        GROUP BY prioridade
-        ORDER BY 
-          CASE prioridade 
-            WHEN 'urgente' THEN 1
-            WHEN 'alta' THEN 2
-            WHEN 'normal' THEN 3
-            WHEN 'baixa' THEN 4
-          END
-      `)
+      todasOrdens.forEach(ordem => {
+        // Contar por status
+        ordemsPorStatus[ordem.status] = (ordemsPorStatus[ordem.status] || 0) + 1
+        
+        // Contar por prioridade
+        ordemsPorPrioridade[ordem.prioridade] = (ordemsPorPrioridade[ordem.prioridade] || 0) + 1
+        
+        // Calcular faturamento
+        const valor = parseFloat(ordem.valor_final) || 0
+        faturamentoTotal += valor
+        
+        if (ordem.status === 'entregue') {
+          faturamentoEntregue += valor
+        } else if (['aguardando', 'em_andamento', 'aguardando_peca', 'pronto'].includes(ordem.status)) {
+          faturamentoPendente += valor
+        }
+      })
 
-      // Faturamento total
-      const faturamento = await db.get(`
-        SELECT 
-          SUM(valor_final) as total,
-          SUM(CASE WHEN status = 'entregue' THEN valor_final ELSE 0 END) as entregue,
-          SUM(CASE WHEN status IN ('recebido', 'em_analise', 'em_reparo', 'pronto') THEN valor_final ELSE 0 END) as pendente
-        FROM ordens 
-        WHERE valor_final IS NOT NULL
-      `)
+      // Converter objetos para arrays
+      const statusArray = Object.entries(ordemsPorStatus).map(([status, total]) => ({ status, total }))
+      const prioridadeArray = Object.entries(ordemsPorPrioridade).map(([prioridade, total]) => ({ prioridade, total }))
 
-      // Ordens recentes (últimas 10)
-      const ordensRecentes = await db.all(`
-        SELECT 
-          o.id, o.equipamento as dispositivo, o.defeito, o.status, o.prioridade,
-          o.data_entrada as data_criacao, o.valor_final,
-          c.nome as cliente_nome
-        FROM ordens o
-        INNER JOIN clientes c ON o.cliente_id = c.id
-        ORDER BY o.data_entrada DESC
-        LIMIT 10
-      `)
+      // Ordens recentes (últimas 10) - buscar com join manual
+      const ordensRecentesRaw = await db.query('SELECT * FROM ordens ORDER BY data_entrada DESC LIMIT 10')
+      const ordensRecentes = []
+      
+      for (const ordem of ordensRecentesRaw) {
+        const cliente = await db.get('clientes', ordem.cliente_id)
+        ordensRecentes.push({
+          id: ordem.id,
+          dispositivo: ordem.equipamento,
+          defeito: ordem.defeito_relatado,
+          status: ordem.status,
+          prioridade: ordem.prioridade,
+          data_criacao: ordem.data_entrada,
+          valor_final: ordem.valor_final,
+          cliente_nome: cliente ? cliente.nome : 'Cliente não encontrado'
+        })
+      }
 
       // Técnicos mais ativos
-      const tecnicosAtivos = await db.all(`
-        SELECT 
-          tecnico_responsavel as tecnico,
-          COUNT(*) as total_ordens,
-          SUM(CASE WHEN status = 'entregue' THEN 1 ELSE 0 END) as concluidas
-        FROM ordens 
-        WHERE tecnico_responsavel IS NOT NULL AND tecnico_responsavel != ''
-        GROUP BY tecnico_responsavel
-        ORDER BY total_ordens DESC
-        LIMIT 5
-      `)
+      const tecnicosMap = {}
+      todasOrdens.forEach(ordem => {
+        if (ordem.tecnico_responsavel && ordem.tecnico_responsavel.trim() !== '') {
+          const tecnico = ordem.tecnico_responsavel
+          if (!tecnicosMap[tecnico]) {
+            tecnicosMap[tecnico] = { tecnico, total_ordens: 0, concluidas: 0 }
+          }
+          tecnicosMap[tecnico].total_ordens++
+          if (ordem.status === 'entregue') {
+            tecnicosMap[tecnico].concluidas++
+          }
+        }
+      })
+      
+      const tecnicosAtivos = Object.values(tecnicosMap)
+        .sort((a, b) => b.total_ordens - a.total_ordens)
+        .slice(0, 5)
 
       res.json({
         success: true,
         data: {
           totais: {
-            ordens: totalOrdens.total,
-            clientes: totalClientes.total,
-            faturamento: faturamento.total || 0,
-            faturamento_entregue: faturamento.entregue || 0,
-            faturamento_pendente: faturamento.pendente || 0,
+            ordens: totalOrdens || 0,
+            clientes: totalClientes || 0,
+            faturamento: faturamentoTotal,
+            faturamento_entregue: faturamentoEntregue,
+            faturamento_pendente: faturamentoPendente,
           },
           breakdown: {
-            status: ordemsPorStatus,
-            prioridade: ordemsPorPrioridade,
+            status: statusArray,
+            prioridade: prioridadeArray,
           },
-          ordensRecentes,
-          tecnicosAtivos,
+          ordensRecentes: ordensRecentes,
+          tecnicosAtivos: tecnicosAtivos,
         },
       })
     } catch (error) {
@@ -884,7 +854,7 @@ class OrdemController {
 
       let sql = `
         SELECT 
-          o.id, o.equipamento, o.marca, o.modelo, o.defeito, o.diagnostico, o.solucao,
+          o.id, o.equipamento, o.marca, o.modelo, o.defeito_relatado as defeito, o.diagnostico, o.solucao,
           o.status, o.prioridade, o.valor_orcamento, o.valor_final,
           o.data_entrada, o.data_finalizacao, o.tecnico_responsavel,
           c.nome as cliente_nome, c.telefone as cliente_telefone

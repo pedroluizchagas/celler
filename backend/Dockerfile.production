@@ -1,0 +1,68 @@
+# ===================================
+# DOCKERFILE DE PRODUÇÃO - BACKEND
+# ===================================
+
+# Usar imagem Node.js LTS Alpine para produção
+FROM node:18-alpine
+
+# Instalar dependências do sistema necessárias para Puppeteer e produção
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    freetype-dev \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    curl \
+    dumb-init \
+    && rm -rf /var/cache/apk/*
+
+# Definir diretório de trabalho
+WORKDIR /app
+
+# Copiar arquivos de dependências
+COPY package*.json ./
+
+# Instalar dependências para produção (sem SQLite)
+RUN npm ci --only=production --no-audit --no-fund && \
+    npm uninstall sqlite3 better-sqlite3 2>/dev/null || true && \
+    rm -rf node_modules/sqlite3 node_modules/better-sqlite3 2>/dev/null || true && \
+    find node_modules -name "*.sqlite*" -delete 2>/dev/null || true && \
+    find node_modules -name "*sqlite*" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    npm cache clean --force && \
+    rm -rf ~/.npm
+
+# Criar usuário não-root para segurança
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+# Copiar código da aplicação
+COPY --chown=nodejs:nodejs . .
+
+# Criar diretórios necessários
+RUN mkdir -p /app/logs /app/uploads /app/sessions /app/backups && \
+    chown -R nodejs:nodejs /app
+
+# Configurar variáveis de ambiente para Puppeteer
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    NODE_ENV=production \
+    CHROME_BIN=/usr/bin/chromium-browser \
+    CHROME_PATH=/usr/bin/chromium-browser
+
+# Mudar para usuário não-root
+USER nodejs
+
+# Expor porta
+EXPOSE 3001
+
+# Configurar healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:3001/api/health || exit 1
+
+# Usar dumb-init para gerenciamento de processos
+ENTRYPOINT ["dumb-init", "--"]
+
+# Comando para iniciar a aplicação
+CMD ["node", "src/server.js"]

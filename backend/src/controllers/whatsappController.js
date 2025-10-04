@@ -1,4 +1,4 @@
-const db = require('../utils/database')
+const db = require('../utils/database-adapter')
 const { LoggerManager } = require('../utils/logger')
 
 class WhatsAppController {
@@ -31,19 +31,26 @@ class WhatsAppController {
   // Obter QR Code para conexão
   async getQRCode(req, res) {
     try {
-      const qrCode = await this.whatsappService.getQRCode()
+      LoggerManager.info('🎯 Controller: Chamada para getQRCode recebida')
+      
+      const qrData = await this.whatsappService.getQRCode()
+      
+      LoggerManager.info(`🎯 Controller: Dados recebidos do service: ${JSON.stringify(qrData)}`)
 
-      if (!qrCode) {
+      if (!qrData || !qrData.qr_base64) {
+        LoggerManager.info('🎯 Controller: QR Code não disponível, retornando 404')
         return res.status(404).json({
           success: false,
           error: 'QR Code não disponível. WhatsApp pode já estar conectado.',
         })
       }
 
+      LoggerManager.info('🎯 Controller: QR Code encontrado, retornando sucesso')
       res.json({
         success: true,
         data: {
-          qrCode,
+          qrCode: qrData.qr_code,
+          qrBase64: qrData.qr_base64,
           instruction: 'Escaneie este QR Code com seu WhatsApp Business',
         },
       })
@@ -305,64 +312,94 @@ class WhatsAppController {
     try {
       const { periodo = '30' } = req.query
 
-      // Total de mensagens por período
-      const totalMessages = await db.get(`
-        SELECT 
-          COUNT(*) as total,
-          COUNT(CASE WHEN direction = 'received' THEN 1 END) as received,
-          COUNT(CASE WHEN direction = 'sent' THEN 1 END) as sent
-        FROM whatsapp_messages 
-        WHERE created_at >= datetime('now', '-${parseInt(periodo)} days')
-      `)
+      // Total de mensagens por período (com fallback)
+      let totalMessages
+      try {
+        totalMessages = await db.get(`
+          SELECT 
+            COUNT(*) as total,
+            COUNT(CASE WHEN direction = 'received' THEN 1 END) as received,
+            COUNT(CASE WHEN direction = 'sent' THEN 1 END) as sent
+          FROM whatsapp_messages 
+          WHERE created_at >= NOW() - INTERVAL '${parseInt(periodo)} days'
+        `) || { total: 0, received: 0, sent: 0 }
+      } catch (error) {
+        LoggerManager.warn('Erro ao buscar mensagens WhatsApp:', error.message)
+        totalMessages = { total: 0, received: 0, sent: 0 }
+      }
 
-      // Interações do bot
-      const botStats = await db.get(`
-        SELECT 
-          COUNT(*) as total_interactions,
-          COUNT(DISTINCT phone_number) as unique_contacts,
-          COUNT(DISTINCT intent) as different_intents
-        FROM whatsapp_interactions 
-        WHERE created_at >= datetime('now', '-${parseInt(periodo)} days')
-      `)
+      // Interações do bot (com fallback)
+      let botStats
+      try {
+        botStats = await db.get(`
+          SELECT 
+            COUNT(*) as total_interactions,
+            COUNT(DISTINCT phone_number) as unique_contacts,
+            COUNT(DISTINCT intent) as different_intents
+          FROM whatsapp_interactions 
+          WHERE created_at >= NOW() - INTERVAL '${parseInt(periodo)} days'
+        `) || { total_interactions: 0, unique_contacts: 0, different_intents: 0 }
+      } catch (error) {
+        LoggerManager.warn('Erro ao buscar interações WhatsApp:', error.message)
+        botStats = { total_interactions: 0, unique_contacts: 0, different_intents: 0 }
+      }
 
-      // Top intents
-      const topIntents = await db.all(`
-        SELECT 
-          intent, 
-          COUNT(*) as count,
-          ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM whatsapp_interactions WHERE created_at >= datetime('now', '-${parseInt(
-            periodo
-          )} days')), 2) as percentage
-        FROM whatsapp_interactions 
-        WHERE created_at >= datetime('now', '-${parseInt(periodo)} days')
-        GROUP BY intent 
-        ORDER BY count DESC 
-        LIMIT 10
-      `)
+      // Top intents (com fallback)
+      let topIntents
+      try {
+        topIntents = await db.all(`
+          SELECT 
+            intent, 
+            COUNT(*) as count,
+            ROUND(COUNT(*) * 100.0 / NULLIF((SELECT COUNT(*) FROM whatsapp_interactions WHERE created_at >= NOW() - INTERVAL '${parseInt(
+              periodo
+            )} days'), 0), 2) as percentage
+          FROM whatsapp_interactions 
+          WHERE created_at >= NOW() - INTERVAL '${parseInt(periodo)} days'
+          GROUP BY intent 
+          ORDER BY count DESC 
+          LIMIT 10
+        `) || []
+      } catch (error) {
+        LoggerManager.warn('Erro ao buscar top intents WhatsApp:', error.message)
+        topIntents = []
+      }
 
-      // Atendimento humano
-      const humanSupport = await db.get(`
-        SELECT 
-          COUNT(*) as total_requests,
-          COUNT(CASE WHEN status = 'waiting' THEN 1 END) as waiting,
-          COUNT(CASE WHEN status = 'attending' THEN 1 END) as attending,
-          COUNT(CASE WHEN status = 'resolved' THEN 1 END) as resolved
-        FROM whatsapp_human_queue 
-        WHERE created_at >= datetime('now', '-${parseInt(periodo)} days')
-      `)
+      // Atendimento humano (com fallback)
+      let humanSupport
+      try {
+        humanSupport = await db.get(`
+          SELECT 
+            COUNT(*) as total_requests,
+            COUNT(CASE WHEN status = 'waiting' THEN 1 END) as waiting,
+            COUNT(CASE WHEN status = 'attending' THEN 1 END) as attending,
+            COUNT(CASE WHEN status = 'resolved' THEN 1 END) as resolved
+          FROM whatsapp_human_queue 
+          WHERE created_at >= NOW() - INTERVAL '${parseInt(periodo)} days'
+        `) || { total_requests: 0, waiting: 0, attending: 0, resolved: 0 }
+      } catch (error) {
+        LoggerManager.warn('Erro ao buscar fila de atendimento WhatsApp:', error.message)
+        humanSupport = { total_requests: 0, waiting: 0, attending: 0, resolved: 0 }
+      }
 
-      // Mensagens por dia (últimos 7 dias)
-      const dailyMessages = await db.all(`
-        SELECT 
-          DATE(created_at) as date,
-          COUNT(*) as total,
-          COUNT(CASE WHEN direction = 'received' THEN 1 END) as received,
-          COUNT(CASE WHEN direction = 'sent' THEN 1 END) as sent
-        FROM whatsapp_messages 
-        WHERE created_at >= datetime('now', '-7 days')
-        GROUP BY DATE(created_at)
-        ORDER BY date DESC
-      `)
+      // Mensagens por dia (últimos 7 dias) (com fallback)
+      let dailyMessages
+      try {
+        dailyMessages = await db.all(`
+          SELECT 
+            DATE(created_at) as date,
+            COUNT(*) as total,
+            COUNT(CASE WHEN direction = 'received' THEN 1 END) as received,
+            COUNT(CASE WHEN direction = 'sent' THEN 1 END) as sent
+          FROM whatsapp_messages 
+          WHERE created_at >= NOW() - INTERVAL '7 days'
+          GROUP BY DATE(created_at)
+          ORDER BY date DESC
+        `) || []
+      } catch (error) {
+        LoggerManager.warn('Erro ao buscar mensagens diárias WhatsApp:', error.message)
+        dailyMessages = []
+      }
 
       res.json({
         success: true,

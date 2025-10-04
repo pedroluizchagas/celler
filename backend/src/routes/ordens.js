@@ -1,7 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const ordemController = require('../controllers/ordemController')
-const { validateOrdem, validateId } = require('../middlewares/validation')
+const { validateOrdem, validateOrdemUpdate, validateId } = require('../middlewares/validation')
 const { handleUpload } = require('../middlewares/upload')
 
 // GET /api/ordens - Listar todas as ordens
@@ -20,7 +20,7 @@ router.get('/:id', validateId, ordemController.show)
 router.post('/', handleUpload, validateOrdem, ordemController.store)
 
 // PUT /api/ordens/:id - Atualizar ordem
-router.put('/:id', validateId, validateOrdem, ordemController.update)
+router.put('/:id', validateId, validateOrdemUpdate, ordemController.update)
 
 // PATCH /api/ordens/:id/status - Alterar apenas o status da ordem
 router.patch('/:id/status', validateId, ordemController.alterarStatus)

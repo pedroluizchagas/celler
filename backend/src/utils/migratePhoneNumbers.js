@@ -1,4 +1,4 @@
-const db = require('./database')
+const db = require('./database-adapter')
 const { LoggerManager } = require('./logger')
 
 // Função para normalizar números de telefone
@@ -27,16 +27,22 @@ async function migratePhoneNumbers() {
   try {
     LoggerManager.info('🔄 Iniciando migração de números de telefone...')
 
-    // Verificar se a tabela existe primeiro
-    const tableExists = await db.get(`
-      SELECT name FROM sqlite_master 
-      WHERE type='table' AND name='whatsapp_messages'
-    `)
-
-    if (!tableExists) {
-      LoggerManager.warn(
-        '⚠️ Tabela whatsapp_messages não existe. Aguardando criação...'
-      )
+    // Verificar se a tabela existe primeiro (compatível com Supabase)
+    try {
+      // Tentar fazer uma consulta simples na tabela para verificar se existe
+      await db.query('SELECT 1 FROM whatsapp_messages LIMIT 1', [])
+      LoggerManager.info('✅ Tabela whatsapp_messages encontrada!')
+    } catch (error) {
+      // Se der erro, a tabela não existe
+      if (error.message && (error.message.includes('does not exist') || error.message.includes('não existe'))) {
+        LoggerManager.warn(
+          '⚠️ Tabela whatsapp_messages não existe. Aguardando criação...'
+        )
+      } else {
+        LoggerManager.warn(
+          '⚠️ Erro ao verificar tabela whatsapp_messages. Continuando sem migração...'
+        )
+      }
       return {
         success: false,
         error: 'Tabela whatsapp_messages não encontrada',
@@ -44,11 +50,20 @@ async function migratePhoneNumbers() {
     }
 
     // Buscar todas as mensagens com números diferentes
-    const messages = await db.all(`
+    const messages = await db.query(`
       SELECT DISTINCT phone_number 
       FROM whatsapp_messages 
       WHERE phone_number IS NOT NULL
-    `)
+    `, [])
+
+    if (!messages || !Array.isArray(messages)) {
+      LoggerManager.info('📱 Nenhuma mensagem encontrada para migração')
+      return {
+        success: true,
+        message: 'Nenhuma mensagem para migrar',
+        migratedCount: 0
+      }
+    }
 
     LoggerManager.info(
       `📱 Encontrados ${messages.length} números únicos para normalizar`
@@ -75,18 +90,25 @@ async function migratePhoneNumbers() {
     // Atualizar mensagens
     for (const [oldNumber, newNumber] of phoneMapping) {
       try {
-        const result = await db.run(
+        await db.run(
           `
           UPDATE whatsapp_messages 
-          SET phone_number = ? 
-          WHERE phone_number = ?
+          SET phone_number = $1 
+          WHERE phone_number = $2
         `,
           [newNumber, oldNumber]
         )
 
-        migratedCount += result.changes
+        // Contar quantas mensagens foram atualizadas
+        const countResult = await db.query(
+          'SELECT COUNT(*) as count FROM whatsapp_messages WHERE phone_number = $1',
+          [newNumber]
+        )
+        
+        const updatedCount = countResult[0]?.count || 0
+        migratedCount += updatedCount
         LoggerManager.debug(
-          `✅ Atualizadas ${result.changes} mensagens para ${newNumber}`
+          `✅ Atualizadas ${updatedCount} mensagens para ${newNumber}`
         )
       } catch (error) {
         LoggerManager.error(`❌ Erro ao atualizar ${oldNumber}:`, error)
@@ -98,7 +120,7 @@ async function migratePhoneNumbers() {
     )
 
     // Verificar se há duplicatas agora
-    const duplicates = await db.all(`
+    const duplicates = await db.query(`
       SELECT phone_number, COUNT(*) as count
       FROM (
         SELECT DISTINCT phone_number, contact_name, message_id
@@ -107,7 +129,7 @@ async function migratePhoneNumbers() {
       ) 
       GROUP BY phone_number 
       HAVING COUNT(*) > 1
-    `)
+    `, [])
 
     if (duplicates.length === 0) {
       LoggerManager.info('🎉 Nenhuma duplicata encontrada após migração!')

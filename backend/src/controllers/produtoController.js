@@ -1,4 +1,4 @@
-const db = require('../utils/database')
+const db = require('../utils/database-adapter')
 const { LoggerManager } = require('../utils/logger')
 
 class ProdutoController {
@@ -735,8 +735,8 @@ class ProdutoController {
 
       res.json({
         success: true,
-        data: alertas,
-        total: alertas.length,
+        data: alertas || [],
+        total: (alertas && alertas.length) || 0,
       })
     } catch (error) {
       LoggerManager.error('Erro ao buscar alertas:', error)
@@ -913,15 +913,15 @@ class ProdutoController {
           sem_estoque: semEstoque.total || 0,
         },
         financeiro: {
-          valor_custo: valorEstoque.valor_custo || 0,
-          valor_venda: valorEstoque.valor_venda || 0,
+          valor_custo: (valorEstoque && valorEstoque.valor_custo) || 0,
+          valor_venda: (valorEstoque && valorEstoque.valor_venda) || 0,
           margem_potencial:
-            (valorEstoque.valor_venda || 0) - (valorEstoque.valor_custo || 0),
+            ((valorEstoque && valorEstoque.valor_venda) || 0) - ((valorEstoque && valorEstoque.valor_custo) || 0),
         },
         movimentacoes: {
-          total_mes: movimentacoesMes.total_movimentacoes || 0,
-          entradas_mes: movimentacoesMes.entradas || 0,
-          saidas_mes: movimentacoesMes.saidas || 0,
+          total_mes: (movimentacoesMes && movimentacoesMes.total_movimentacoes) || 0,
+          entradas_mes: (movimentacoesMes && movimentacoesMes.entradas) || 0,
+          saidas_mes: (movimentacoesMes && movimentacoesMes.saidas) || 0,
         },
         mais_vendidos: maisVendidos,
       }

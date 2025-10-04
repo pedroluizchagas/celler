@@ -3,6 +3,7 @@ const path = require('path')
 const { promisify } = require('util')
 const { exec } = require('child_process')
 const execAsync = promisify(exec)
+const supabase = require('./supabase')
 
 // Logger simplificado para evitar dependência circular
 const simpleLogger = {
@@ -14,7 +15,6 @@ const simpleLogger = {
 class BackupManager {
   constructor() {
     this.backupDir = path.join(__dirname, '../../backups')
-    this.dbPath = path.join(__dirname, '../../database.sqlite')
     this.maxBackups = 30 // Manter 30 backups por tipo
 
     this.ensureBackupDir()
@@ -27,15 +27,52 @@ class BackupManager {
     }
   }
 
-  // Backup completo do banco
+  // Backup completo do banco Supabase
   async backupCompleto(tipo = 'manual') {
     try {
+      if (!supabase.isReady()) {
+        throw new Error('Supabase não está configurado')
+      }
+
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-      const backupName = `backup-completo-${timestamp}.sqlite`
+      const backupName = `backup-completo-${timestamp}.json`
       const backupPath = path.join(this.backupDir, backupName)
 
-      // Copiar arquivo de banco
-      await fs.promises.copyFile(this.dbPath, backupPath)
+      simpleLogger.info('🔄 Iniciando backup completo do Supabase...')
+
+      // Lista de tabelas para backup
+      const tabelas = [
+        'clientes',
+        'ordens',
+        'produtos',
+        'categorias',
+        'movimentacoes_financeiras',
+        'categorias_financeiras',
+        'whatsapp_messages',
+        'whatsapp_contacts'
+      ]
+
+      const backupData = {
+        timestamp: new Date().toISOString(),
+        tipo: 'completo',
+        database: 'supabase',
+        tabelas: {}
+      }
+
+      // Fazer backup de cada tabela
+      for (const tabela of tabelas) {
+        try {
+          const dados = await supabase.query(`SELECT * FROM ${tabela}`, [])
+          backupData.tabelas[tabela] = dados
+          simpleLogger.info(`✅ Backup da tabela ${tabela}: ${dados.length} registros`)
+        } catch (error) {
+          simpleLogger.warn(`⚠️ Erro no backup da tabela ${tabela}:`, error.message)
+          backupData.tabelas[tabela] = []
+        }
+      }
+
+      // Salvar backup em arquivo JSON
+      await fs.promises.writeFile(backupPath, JSON.stringify(backupData, null, 2))
 
       // Comprimir backup
       const compressedPath = `${backupPath}.gz`
@@ -48,12 +85,12 @@ class BackupManager {
 
       const backupInfo = {
         tipo: 'completo',
-        origem: tipo,
-        arquivo: backupName + '.gz',
+        arquivo: path.basename(compressedPath),
         caminho: compressedPath,
         tamanho: stats.size,
-        data: new Date(),
-        timestamp,
+        timestamp: new Date().toISOString(),
+        tabelas: Object.keys(backupData.tabelas).length,
+        registros: Object.values(backupData.tabelas).reduce((total, dados) => total + dados.length, 0)
       }
 
       simpleLogger.info('✅ Backup completo criado:', backupInfo)
@@ -63,40 +100,63 @@ class BackupManager {
 
       return backupInfo
     } catch (error) {
-      simpleLogger.error('❌ Erro ao criar backup completo:', error)
+      simpleLogger.error('❌ Erro no backup completo:', error)
       throw error
     }
   }
 
-  // Backup incremental (apenas dados modificados)
+  // Backup incremental (apenas dados modificados recentemente)
   async backupIncremental() {
     try {
+      if (!supabase.isReady()) {
+        throw new Error('Supabase não está configurado')
+      }
+
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-      const backupName = `backup-incremental-${timestamp}.sql`
+      const backupName = `backup-incremental-${timestamp}.json`
       const backupPath = path.join(this.backupDir, backupName)
 
-      // Exportar apenas dados modificados nas últimas 24h
-      const sql = `
-        -- Backup Incremental - ${new Date().toISOString()}
-        
-        -- Clientes modificados nas últimas 24h
-        .mode insert clientes
-        SELECT * FROM clientes 
-        WHERE updated_at >= datetime('now', '-1 day');
-        
-        -- Ordens modificadas nas últimas 24h
-        .mode insert ordens
-        SELECT * FROM ordens 
-        WHERE updated_at >= datetime('now', '-1 day');
-        
-        -- Fotos das ordens modificadas
-        .mode insert ordem_fotos
-        SELECT of.* FROM ordem_fotos of
-        JOIN ordens o ON of.ordem_id = o.id
-        WHERE o.updated_at >= datetime('now', '-1 day');
-      `
+      simpleLogger.info('🔄 Iniciando backup incremental do Supabase...')
 
-      await fs.promises.writeFile(backupPath, sql)
+      // Data de 24 horas atrás para backup incremental
+      const dataLimite = new Date()
+      dataLimite.setHours(dataLimite.getHours() - 24)
+      const dataLimiteISO = dataLimite.toISOString()
+
+      const backupData = {
+        timestamp: new Date().toISOString(),
+        tipo: 'incremental',
+        database: 'supabase',
+        dataLimite: dataLimiteISO,
+        tabelas: {}
+      }
+
+      // Tabelas com campos de data para backup incremental
+      const tabelasComData = [
+        { nome: 'clientes', campoData: 'updated_at' },
+        { nome: 'ordens', campoData: 'updated_at' },
+        { nome: 'produtos', campoData: 'updated_at' },
+        { nome: 'movimentacoes_financeiras', campoData: 'created_at' },
+        { nome: 'whatsapp_messages', campoData: 'timestamp' }
+      ]
+
+      // Fazer backup incremental de cada tabela
+      for (const { nome, campoData } of tabelasComData) {
+        try {
+          const dados = await supabase.query(
+            `SELECT * FROM ${nome} WHERE ${campoData} >= $1`,
+            [dataLimiteISO]
+          )
+          backupData.tabelas[nome] = dados
+          simpleLogger.info(`✅ Backup incremental da tabela ${nome}: ${dados.length} registros`)
+        } catch (error) {
+          simpleLogger.warn(`⚠️ Erro no backup incremental da tabela ${nome}:`, error.message)
+          backupData.tabelas[nome] = []
+        }
+      }
+
+      // Salvar backup em arquivo JSON
+      await fs.promises.writeFile(backupPath, JSON.stringify(backupData, null, 2))
 
       // Comprimir backup
       const compressedPath = `${backupPath}.gz`
@@ -109,12 +169,13 @@ class BackupManager {
 
       const backupInfo = {
         tipo: 'incremental',
-        origem: 'automatico',
-        arquivo: backupName + '.gz',
+        arquivo: path.basename(compressedPath),
         caminho: compressedPath,
         tamanho: stats.size,
-        data: new Date(),
-        timestamp,
+        timestamp: new Date().toISOString(),
+        dataLimite: dataLimiteISO,
+        tabelas: Object.keys(backupData.tabelas).length,
+        registros: Object.values(backupData.tabelas).reduce((total, dados) => total + dados.length, 0)
       }
 
       simpleLogger.info('✅ Backup incremental criado:', backupInfo)
@@ -124,7 +185,7 @@ class BackupManager {
 
       return backupInfo
     } catch (error) {
-      simpleLogger.error('❌ Erro ao criar backup incremental:', error)
+      simpleLogger.error('❌ Erro no backup incremental:', error)
       throw error
     }
   }
@@ -132,20 +193,105 @@ class BackupManager {
   // Comprimir arquivo usando gzip
   async compressFile(inputPath, outputPath) {
     try {
-      const command = `gzip -c "${inputPath}" > "${outputPath}"`
+      const command = process.platform === 'win32' 
+        ? `powershell -Command "& {Get-Content '${inputPath}' | Out-String | ForEach-Object {[System.Text.Encoding]::UTF8.GetBytes($_)} | Set-Content -Path '${outputPath}' -Encoding Byte}"`
+        : `gzip -c "${inputPath}" > "${outputPath}"`
+      
       await execAsync(command)
+      simpleLogger.info('✅ Arquivo comprimido:', outputPath)
     } catch (error) {
-      // Fallback: compressão manual se gzip não estiver disponível
-      const zlib = require('zlib')
-      const readable = fs.createReadStream(inputPath)
-      const writable = fs.createWriteStream(outputPath)
-      const gzip = zlib.createGzip()
+      simpleLogger.warn('⚠️ Erro na compressão, mantendo arquivo original:', error.message)
+      // Se falhar a compressão, manter o arquivo original
+      await fs.promises.copyFile(inputPath, outputPath.replace('.gz', ''))
+    }
+  }
 
-      return new Promise((resolve, reject) => {
-        readable.pipe(gzip).pipe(writable)
-        writable.on('finish', resolve)
-        writable.on('error', reject)
-      })
+  // Verificar integridade do backup
+  async verificarIntegridade(nomeArquivo) {
+    try {
+      const backupPath = path.join(this.backupDir, nomeArquivo)
+      
+      if (!fs.existsSync(backupPath)) {
+        throw new Error('Arquivo de backup não encontrado')
+      }
+
+      const stats = await fs.promises.stat(backupPath)
+      
+      // Verificações básicas
+      const integridade = {
+        arquivo: nomeArquivo,
+        existe: true,
+        tamanho: stats.size,
+        dataModificacao: stats.mtime,
+        legivel: true,
+        valido: true
+      }
+
+      // Tentar ler o arquivo para verificar se não está corrompido
+      try {
+        if (nomeArquivo.endsWith('.gz')) {
+          // Para arquivos comprimidos, apenas verificar se existem
+          integridade.comprimido = true
+        } else {
+          // Para arquivos JSON, tentar fazer parse
+          const conteudo = await fs.promises.readFile(backupPath, 'utf8')
+          const dados = JSON.parse(conteudo)
+          integridade.formato = 'json'
+          integridade.tabelas = Object.keys(dados.tabelas || {}).length
+        }
+      } catch (error) {
+        integridade.legivel = false
+        integridade.valido = false
+        integridade.erro = error.message
+      }
+
+      return integridade
+    } catch (error) {
+      return {
+        arquivo: nomeArquivo,
+        existe: false,
+        valido: false,
+        erro: error.message
+      }
+    }
+  }
+
+  // Restaurar backup (funcionalidade limitada para Supabase)
+  async restaurarBackup(nomeArquivo) {
+    try {
+      simpleLogger.warn('⚠️ Restauração de backup para Supabase não implementada por segurança')
+      simpleLogger.info('💡 Para restaurar dados no Supabase, use o painel administrativo ou scripts específicos')
+      
+      return {
+        success: false,
+        message: 'Restauração automática não disponível para Supabase',
+        recomendacao: 'Use o painel do Supabase ou scripts específicos para restauração'
+      }
+    } catch (error) {
+      simpleLogger.error('❌ Erro na restauração:', error)
+      throw error
+    }
+  }
+
+  // Excluir backup
+  async excluirBackup(nomeArquivo) {
+    try {
+      const backupPath = path.join(this.backupDir, nomeArquivo)
+      
+      if (!fs.existsSync(backupPath)) {
+        throw new Error('Arquivo de backup não encontrado')
+      }
+
+      await fs.promises.unlink(backupPath)
+      simpleLogger.info('🗑️ Backup excluído:', nomeArquivo)
+
+      return {
+        success: true,
+        message: 'Backup excluído com sucesso'
+      }
+    } catch (error) {
+      simpleLogger.error('❌ Erro ao excluir backup:', error)
+      throw error
     }
   }
 
@@ -156,99 +302,52 @@ class BackupManager {
       const backups = []
 
       for (const arquivo of arquivos) {
-        if (arquivo.endsWith('.gz')) {
-          const caminho = path.join(this.backupDir, arquivo)
-          const stats = await fs.promises.stat(caminho)
-
-          const tipo = arquivo.includes('incremental')
-            ? 'incremental'
-            : 'completo'
-          const timestamp = arquivo.match(
-            /(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/
-          )?.[1]
-
+        if (arquivo.includes('backup-')) {
+          const backupPath = path.join(this.backupDir, arquivo)
+          const stats = await fs.promises.stat(backupPath)
+          
           backups.push({
-            arquivo,
-            caminho,
-            tipo,
+            nome: arquivo,
             tamanho: stats.size,
-            data: stats.mtime,
-            timestamp,
-            formatado: {
-              tamanho: this.formatarTamanho(stats.size),
-              data: stats.mtime.toLocaleString('pt-BR'),
-            },
+            dataModificacao: stats.mtime,
+            tipo: arquivo.includes('completo') ? 'completo' : 'incremental'
           })
         }
       }
 
-      return backups.sort((a, b) => b.data - a.data)
+      // Ordenar por data de modificação (mais recente primeiro)
+      backups.sort((a, b) => new Date(b.dataModificacao) - new Date(a.dataModificacao))
+
+      return backups
     } catch (error) {
       simpleLogger.error('❌ Erro ao listar backups:', error)
-      throw error
+      return []
     }
   }
 
-  // Restaurar backup
-  async restaurarBackup(nomeArquivo) {
+  // Obter estatísticas dos backups
+  async obterEstatisticas() {
     try {
-      const backupPath = path.join(this.backupDir, nomeArquivo)
-
-      if (!fs.existsSync(backupPath)) {
-        throw new Error('Arquivo de backup não encontrado')
+      const backups = await this.listarBackups()
+      
+      const estatisticas = {
+        total: backups.length,
+        completos: backups.filter(b => b.tipo === 'completo').length,
+        incrementais: backups.filter(b => b.tipo === 'incremental').length,
+        tamanhoTotal: backups.reduce((total, backup) => total + backup.tamanho, 0),
+        ultimoBackup: backups.length > 0 ? backups[0].dataModificacao : null
       }
 
-      // Criar backup de segurança antes de restaurar
-      await this.backupCompleto('pre-restauracao')
-
-      // Descomprimir backup se necessário
-      let arquivoParaRestaurar = backupPath
-      if (nomeArquivo.endsWith('.gz')) {
-        const tempPath = backupPath.replace('.gz', '')
-        await this.descompressFile(backupPath, tempPath)
-        arquivoParaRestaurar = tempPath
-      }
-
-      // Restaurar banco
-      if (arquivoParaRestaurar.endsWith('.sqlite')) {
-        // Backup completo - substituir arquivo
-        await fs.promises.copyFile(arquivoParaRestaurar, this.dbPath)
-      } else if (arquivoParaRestaurar.endsWith('.sql')) {
-        // Backup incremental - executar SQL
-        const sql = await fs.promises.readFile(arquivoParaRestaurar, 'utf8')
-        // Executar SQL no banco (implementar conforme necessário)
-      }
-
-      // Limpar arquivo temporário
-      if (arquivoParaRestaurar !== backupPath) {
-        await fs.promises.unlink(arquivoParaRestaurar)
-      }
-
-      simpleLogger.info('✅ Backup restaurado com sucesso:', nomeArquivo)
-      return { sucesso: true, arquivo: nomeArquivo }
+      return estatisticas
     } catch (error) {
-      simpleLogger.error('❌ Erro ao restaurar backup:', error)
-      throw error
-    }
-  }
-
-  // Descomprimir arquivo
-  async descompressFile(inputPath, outputPath) {
-    try {
-      const command = `gunzip -c "${inputPath}" > "${outputPath}"`
-      await execAsync(command)
-    } catch (error) {
-      // Fallback: descompressão manual
-      const zlib = require('zlib')
-      const readable = fs.createReadStream(inputPath)
-      const writable = fs.createWriteStream(outputPath)
-      const gunzip = zlib.createGunzip()
-
-      return new Promise((resolve, reject) => {
-        readable.pipe(gunzip).pipe(writable)
-        writable.on('finish', resolve)
-        writable.on('error', reject)
-      })
+      simpleLogger.error('❌ Erro ao obter estatísticas:', error)
+      return {
+        total: 0,
+        completos: 0,
+        incrementais: 0,
+        tamanhoTotal: 0,
+        ultimoBackup: null
+      }
     }
   }
 
@@ -256,153 +355,67 @@ class BackupManager {
   async limparBackupsAntigos(tipo) {
     try {
       const backups = await this.listarBackups()
-      const backupsTipo = backups.filter((b) => b.tipo === tipo)
+      const backupsTipo = backups.filter(b => b.tipo === tipo)
 
       if (backupsTipo.length > this.maxBackups) {
-        const backupsParaDeletar = backupsTipo
-          .slice(this.maxBackups)
-          .sort((a, b) => a.data - b.data)
-
-        for (const backup of backupsParaDeletar) {
-          await fs.promises.unlink(backup.caminho)
-          simpleLogger.info('🗑️ Backup antigo removido:', backup.arquivo)
+        const backupsParaRemover = backupsTipo.slice(this.maxBackups)
+        
+        for (const backup of backupsParaRemover) {
+          await this.excluirBackup(backup.nome)
         }
+
+        simpleLogger.info(`🧹 ${backupsParaRemover.length} backups antigos do tipo ${tipo} removidos`)
       }
     } catch (error) {
       simpleLogger.error('❌ Erro ao limpar backups antigos:', error)
     }
   }
 
-  // Excluir backup específico
-  async excluirBackup(nomeArquivo) {
-    try {
-      const backupPath = path.join(this.backupDir, nomeArquivo)
-
-      if (!fs.existsSync(backupPath)) {
-        throw new Error('Arquivo de backup não encontrado')
-      }
-
-      await fs.promises.unlink(backupPath)
-      simpleLogger.info('🗑️ Backup excluído:', nomeArquivo)
-
-      return { sucesso: true, arquivo: nomeArquivo }
-    } catch (error) {
-      simpleLogger.error('❌ Erro ao excluir backup:', error)
-      throw error
-    }
-  }
-
-  // Verificar integridade do backup
-  async verificarIntegridade(nomeArquivo) {
-    try {
-      const backupPath = path.join(this.backupDir, nomeArquivo)
-
-      if (!fs.existsSync(backupPath)) {
-        return { valido: false, erro: 'Arquivo não encontrado' }
-      }
-
-      const stats = await fs.promises.stat(backupPath)
-
-      // Verificações básicas
-      if (stats.size === 0) {
-        return { valido: false, erro: 'Arquivo vazio' }
-      }
-
-      // Verificar se é um arquivo comprimido válido
-      if (nomeArquivo.endsWith('.gz')) {
-        try {
-          const tempPath = backupPath.replace('.gz', '.temp')
-          await this.descompressFile(backupPath, tempPath)
-          await fs.promises.unlink(tempPath)
-        } catch (error) {
-          return { valido: false, erro: 'Arquivo comprimido corrompido' }
-        }
-      }
-
-      return {
-        valido: true,
-        tamanho: stats.size,
-        data: stats.mtime,
-        formatado: {
-          tamanho: this.formatarTamanho(stats.size),
-          data: stats.mtime.toLocaleString('pt-BR'),
-        },
-      }
-    } catch (error) {
-      return { valido: false, erro: error.message }
-    }
-  }
-
   // Agendar backups automáticos
   agendarBackups() {
-    // Backup completo diário às 2h da manhã
-    const agendarCompleto = () => {
+    simpleLogger.info('📅 Sistema de backup automático iniciado para Supabase')
+    
+    // Backup completo diário às 2:00
+    const agendarBackupCompleto = () => {
       const agora = new Date()
       const proximoBackup = new Date()
       proximoBackup.setHours(2, 0, 0, 0)
-
+      
       if (proximoBackup <= agora) {
         proximoBackup.setDate(proximoBackup.getDate() + 1)
       }
-
-      const timeout = proximoBackup.getTime() - agora.getTime()
-
+      
+      const tempoAteProximo = proximoBackup.getTime() - agora.getTime()
+      
       setTimeout(async () => {
-        await this.backupCompleto('automatico')
-        agendarCompleto() // Reagendar para o próximo dia
-      }, timeout)
-
-      simpleLogger.info(
-        '📅 Próximo backup completo agendado para:',
-        proximoBackup.toLocaleString('pt-BR')
-      )
+        try {
+          await this.backupCompleto('automatico')
+          simpleLogger.info('✅ Backup completo automático realizado')
+        } catch (error) {
+          simpleLogger.error('❌ Erro no backup completo automático:', error)
+        }
+        
+        // Reagendar para o próximo dia
+        agendarBackupCompleto()
+      }, tempoAteProximo)
+      
+      simpleLogger.info(`⏰ Próximo backup completo agendado para: ${proximoBackup.toLocaleString()}`)
     }
 
     // Backup incremental a cada 6 horas
-    const agendarIncremental = () => {
+    const agendarBackupIncremental = () => {
       setInterval(async () => {
-        await this.backupIncremental()
-      }, 6 * 60 * 60 * 1000) // 6 horas
+        try {
+          await this.backupIncremental()
+          simpleLogger.info('✅ Backup incremental automático realizado')
+        } catch (error) {
+          simpleLogger.error('❌ Erro no backup incremental automático:', error)
+        }
+      }, 6 * 60 * 60 * 1000) // 6 horas em milissegundos
     }
 
-    agendarCompleto()
-    agendarIncremental()
-
-    simpleLogger.info('⚡ Sistema de backup automático iniciado')
-  }
-
-  // Utilitários
-  formatarTamanho(bytes) {
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
-    if (bytes === 0) return '0 Bytes'
-    const i = Math.floor(Math.log(bytes) / Math.log(1024))
-    return Math.round((bytes / Math.pow(1024, i)) * 100) / 100 + ' ' + sizes[i]
-  }
-
-  // Estatísticas de backup
-  async obterEstatisticas() {
-    try {
-      const backups = await this.listarBackups()
-      const completos = backups.filter((b) => b.tipo === 'completo')
-      const incrementais = backups.filter((b) => b.tipo === 'incremental')
-
-      const tamanhoTotal = backups.reduce(
-        (total, backup) => total + backup.tamanho,
-        0
-      )
-
-      return {
-        total: backups.length,
-        completos: completos.length,
-        incrementais: incrementais.length,
-        tamanhoTotal: this.formatarTamanho(tamanhoTotal),
-        ultimoBackup: backups[0] || null,
-        espacoOcupado: tamanhoTotal,
-      }
-    } catch (error) {
-      simpleLogger.error('❌ Erro ao obter estatísticas de backup:', error)
-      throw error
-    }
+    agendarBackupCompleto()
+    agendarBackupIncremental()
   }
 }
 

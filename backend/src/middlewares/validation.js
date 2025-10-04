@@ -54,10 +54,9 @@ const validateOrdem = (req, res, next) => {
 
   // Validação de status se fornecido
   const statusValidos = [
-    'recebido',
-    'em_analise',
-    'aguardando_pecas',
-    'em_reparo',
+    'aguardando',
+    'em_andamento',
+    'aguardando_peca',
     'pronto',
     'entregue',
     'cancelado',
@@ -190,9 +189,78 @@ const validateId = (req, res, next) => {
   next()
 }
 
+// Middleware de validação para atualizações de ordens de serviço
+const validateOrdemUpdate = (req, res, next) => {
+  const { cliente_id, equipamento, defeito, status, prioridade } = req.body
+
+  // Validação de cliente_id se fornecido
+  if (cliente_id !== undefined && (isNaN(cliente_id) || cliente_id <= 0)) {
+    return res.status(400).json({
+      error: 'Cliente deve ser um ID válido',
+    })
+  }
+
+  // Validação de equipamento se fornecido
+  if (equipamento !== undefined && (!equipamento || equipamento.trim().length < 2)) {
+    return res.status(400).json({
+      error: 'Equipamento deve ter pelo menos 2 caracteres',
+    })
+  }
+
+  // Validação de defeito se fornecido
+  if (defeito !== undefined && (!defeito || defeito.trim().length < 5)) {
+    return res.status(400).json({
+      error: 'Descrição do defeito deve ter pelo menos 5 caracteres',
+    })
+  }
+
+  // Validação de status se fornecido
+  if (status !== undefined) {
+    const statusValidos = [
+      'aguardando',
+      'em_andamento',
+      'aguardando_peca',
+      'pronto',
+      'entregue',
+      'cancelado'
+    ]
+    if (!statusValidos.includes(status)) {
+      return res.status(400).json({
+        error: `Status deve ser um dos seguintes: ${statusValidos.join(', ')}`,
+      })
+    }
+  }
+
+  // Validação de prioridade se fornecida
+  if (prioridade !== undefined) {
+    const prioridadesValidas = ['baixa', 'normal', 'alta', 'urgente']
+    if (!prioridadesValidas.includes(prioridade)) {
+      return res.status(400).json({
+        error: `Prioridade deve ser uma das seguintes: ${prioridadesValidas.join(', ')}`,
+      })
+    }
+  }
+
+  // Validação de campos numéricos se fornecidos
+  const camposNumericos = ['valor_orcamento', 'valor_final']
+  for (const campo of camposNumericos) {
+    if (req.body[campo] !== undefined) {
+      const valor = parseFloat(req.body[campo])
+      if (isNaN(valor) || valor < 0) {
+        return res.status(400).json({
+          error: `${campo.replace('_', ' ')} deve ser um número positivo`,
+        })
+      }
+    }
+  }
+
+  next()
+}
+
 module.exports = {
   validateCliente,
   validateOrdem,
+  validateOrdemUpdate,
   validateProduto,
   validateId,
 }

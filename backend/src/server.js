@@ -54,7 +54,8 @@ app.use(
       'http://localhost:51740',
       'http://127.0.0.1:5173',
       'http://192.168.1.*',
-    ], // Permite acesso local e da rede
+      'https://assistencia-tecnica-mu.vercel.app',
+    ], // Permite acesso local e da rede + produção
     credentials: true,
   })
 )

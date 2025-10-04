@@ -220,14 +220,15 @@ class ProdutoController {
         }
       }
 
+      console.log('💾 Inserindo produto na base de dados...')
       const resultado = await db.run(
         `
         INSERT INTO produtos (
           nome, descricao, codigo_barras, codigo_interno,
-          categoria_id, fornecedor_id, tipo, preco_custo, preco_venda,
+          categoria_id, tipo, preco_custo, preco_venda,
           margem_lucro, estoque_atual, estoque_minimo, estoque_maximo,
-          localizacao, observacoes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          localizacao
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         [
           nome.trim(),
@@ -235,7 +236,6 @@ class ProdutoController {
           codigo_barras?.trim() || null,
           codigo_interno?.trim() || null,
           categoria_id || null,
-          fornecedor_id || null,
           tipo || 'peca',
           preco_custo || 0,
           preco_venda || 0,
@@ -244,9 +244,9 @@ class ProdutoController {
           estoque_minimo || 5,
           estoque_maximo || 100,
           localizacao?.trim() || null,
-          observacoes?.trim() || null,
         ]
       )
+      console.log('✅ Produto inserido com ID:', resultado.id)
 
       // Se há estoque inicial, criar movimentação
       if (estoque_atual > 0) {

@@ -55,21 +55,46 @@ const ProdutoModal = ({ open, produto, modo = 'criar', onClose, onSave }) => {
   useEffect(() => {
     const carregarCategorias = async () => {
       try {
-        const data = await produtoService.listarCategorias()
-        setCategorias(data || [])
+        console.log('🔄 Carregando categorias...')
+        const response = await produtoService.listarCategorias()
+        console.log('📋 Resposta das categorias:', response)
+        
+        const categoriasData = response?.data || response || []
+        console.log('✅ Categorias processadas:', categoriasData)
+        
+        if (Array.isArray(categoriasData) && categoriasData.length > 0) {
+          setCategorias(categoriasData)
+          console.log('✅ Categorias carregadas:', categoriasData.length)
+        } else {
+          console.log('⚠️ Nenhuma categoria encontrada, usando categorias padrão')
+          // Usar categorias padrão se não houver categorias no banco
+          const categoriasDefault = [
+            { id: 'display', nome: 'Displays' },
+            { id: 'bateria', nome: 'Baterias' },
+            { id: 'conector', nome: 'Conectores' },
+            { id: 'placa', nome: 'Placas' },
+            { id: 'capa', nome: 'Capas' },
+            { id: 'fone', nome: 'Fones' },
+            { id: 'carregador', nome: 'Carregadores' },
+            { id: 'ferramenta', nome: 'Ferramentas' },
+          ]
+          setCategorias(categoriasDefault)
+        }
       } catch (error) {
-        console.error('Erro ao carregar categorias:', error)
+        console.error('❌ Erro ao carregar categorias:', error)
         // Usar categorias padrão em caso de erro
-        setCategorias([
-          { id: 1, nome: 'Displays' },
-          { id: 2, nome: 'Baterias' },
-          { id: 3, nome: 'Conectores' },
-          { id: 4, nome: 'Placas' },
-          { id: 5, nome: 'Capas' },
-          { id: 6, nome: 'Fones' },
-          { id: 7, nome: 'Carregadores' },
-          { id: 8, nome: 'Ferramentas' },
-        ])
+        const categoriasDefault = [
+          { id: 'display', nome: 'Displays' },
+          { id: 'bateria', nome: 'Baterias' },
+          { id: 'conector', nome: 'Conectores' },
+          { id: 'placa', nome: 'Placas' },
+          { id: 'capa', nome: 'Capas' },
+          { id: 'fone', nome: 'Fones' },
+          { id: 'carregador', nome: 'Carregadores' },
+          { id: 'ferramenta', nome: 'Ferramentas' },
+        ]
+        setCategorias(categoriasDefault)
+        console.log('✅ Usando categorias padrão:', categoriasDefault.length)
       }
     }
 

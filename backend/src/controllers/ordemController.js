@@ -175,6 +175,9 @@ class OrdemController {
   // Criar nova ordem
   async store(req, res) {
     try {
+      console.log('🔄 Criando nova ordem de serviço...')
+      console.log('📋 Dados recebidos:', JSON.stringify(req.body, null, 2))
+
       const {
         cliente_id,
         equipamento,
@@ -201,9 +204,41 @@ class OrdemController {
 
       // Validações básicas
       if (!cliente_id || !equipamento || !defeito) {
+        console.log('❌ Validação falhou:', { cliente_id, equipamento, defeito })
         return res.status(400).json({
           success: false,
           error: 'Cliente, equipamento e defeito são obrigatórios',
+          details: {
+            cliente_id: !cliente_id ? 'Cliente é obrigatório' : null,
+            equipamento: !equipamento ? 'Equipamento é obrigatório' : null,
+            defeito: !defeito ? 'Defeito é obrigatório' : null,
+          }
+        })
+      }
+
+      // Validar se cliente existe
+      if (cliente_id && !isNaN(parseInt(cliente_id))) {
+        try {
+          const clienteExiste = await db.get('SELECT id FROM clientes WHERE id = ?', [parseInt(cliente_id)])
+          if (!clienteExiste) {
+            console.log('❌ Cliente não encontrado:', cliente_id)
+            return res.status(400).json({
+              success: false,
+              error: 'Cliente não encontrado',
+            })
+          }
+        } catch (clienteError) {
+          console.log('❌ Erro ao verificar cliente:', clienteError.message)
+          return res.status(400).json({
+            success: false,
+            error: 'Erro ao verificar cliente',
+          })
+        }
+      } else {
+        console.log('❌ ID do cliente inválido:', cliente_id)
+        return res.status(400).json({
+          success: false,
+          error: 'ID do cliente inválido',
         })
       }
 

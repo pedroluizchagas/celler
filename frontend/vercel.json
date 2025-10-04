@@ -22,7 +22,6 @@
       "dest": "/index.html"
     }
   ],
-  "functions": {},
   "headers": [
     {
       "source": "/(.*)",

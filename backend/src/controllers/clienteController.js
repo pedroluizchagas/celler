@@ -25,27 +25,53 @@ class ClienteController {
     try {
       const { id } = req.params
 
-      const cliente = await db.get('clientes', id)
+      // Validar se o ID é um número válido
+      if (!id || isNaN(parseInt(id))) {
+        console.log('❌ ID inválido fornecido:', id)
+        return res.status(400).json({
+          success: false,
+          error: 'ID do cliente inválido',
+        })
+      }
+
+      console.log('🔍 Buscando cliente ID:', id)
+      const cliente = await db.get('clientes', parseInt(id))
 
       if (!cliente) {
+        console.log('❌ Cliente não encontrado:', id)
         return res.status(404).json({
           success: false,
           error: 'Cliente não encontrado',
         })
       }
 
-      // Buscar ordens do cliente
-      const ordens = await db.find('ordens', { cliente_id: id })
+      console.log('✅ Cliente encontrado:', cliente.nome)
 
-      res.json({
-        success: true,
-        data: {
-          ...cliente,
-          ordens,
-        },
-      })
+      // Buscar ordens do cliente
+      try {
+        const ordens = await db.find('ordens', { cliente_id: parseInt(id) })
+        console.log('📋 Ordens encontradas:', ordens.length)
+
+        res.json({
+          success: true,
+          data: {
+            ...cliente,
+            ordens,
+          },
+        })
+      } catch (ordensError) {
+        console.warn('⚠️ Erro ao buscar ordens do cliente, retornando cliente sem ordens:', ordensError.message)
+        // Retornar cliente mesmo se não conseguir buscar ordens
+        res.json({
+          success: true,
+          data: {
+            ...cliente,
+            ordens: [],
+          },
+        })
+      }
     } catch (error) {
-      console.error('Erro ao buscar cliente:', error)
+      console.error('❌ Erro ao buscar cliente:', error)
       res.status(500).json({
         success: false,
         error: 'Erro interno do servidor',

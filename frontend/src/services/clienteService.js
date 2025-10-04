@@ -21,9 +21,25 @@ export const clienteService = {
   // Buscar cliente por ID
   async buscarPorId(id) {
     try {
+      // Validar ID
+      if (!id || isNaN(parseInt(id))) {
+        throw new Error('ID do cliente inválido')
+      }
+
+      console.log('🔍 Buscando cliente ID:', id)
       const response = await api.get(`/clientes/${id}`)
+      console.log('✅ Cliente encontrado:', response.data)
+      
       return response.data?.data || response.data
     } catch (error) {
+      console.error('❌ Erro ao buscar cliente:', error)
+      
+      if (error.response?.status === 404) {
+        throw new Error('Cliente não encontrado')
+      } else if (error.response?.status === 400) {
+        throw new Error(error.response?.data?.error || 'Dados inválidos')
+      }
+      
       throw new Error(error.response?.data?.error || 'Erro ao buscar cliente')
     }
   },

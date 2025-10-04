@@ -174,9 +174,34 @@ function OrdemModal({ open, onClose, ordem = null, onSave }) {
 
   const carregarClientes = async () => {
     try {
+      console.log('🔄 Carregando lista de clientes...')
       const response = await clienteService.listar()
-      setClientes(response.data || [])
+      const clientesData = response.data || response || []
+      
+      console.log('✅ Clientes carregados:', clientesData.length)
+      setClientes(clientesData)
+
+      // Se estamos editando uma ordem e o cliente não está na lista, tentar buscá-lo
+      if (ordem && ordem.cliente_id && clientesData.length > 0) {
+        const clienteExiste = clientesData.find(c => c.id === ordem.cliente_id)
+        if (!clienteExiste) {
+          console.log('⚠️ Cliente da ordem não encontrado na lista, tentando buscar:', ordem.cliente_id)
+          try {
+            const clienteResponse = await clienteService.buscarPorId(ordem.cliente_id)
+            if (clienteResponse.data || clienteResponse) {
+              const clienteData = clienteResponse.data || clienteResponse
+              console.log('✅ Cliente da ordem encontrado:', clienteData.nome)
+              setClientes(prev => [...prev, clienteData])
+            }
+          } catch (clienteError) {
+            console.warn('❌ Cliente da ordem não pôde ser carregado:', clienteError.message)
+            // Limpar o cliente_id se não conseguir carregar
+            setFormData(prev => ({ ...prev, cliente_id: '' }))
+          }
+        }
+      }
     } catch (err) {
+      console.error('❌ Erro ao carregar clientes:', err)
       setError('Erro ao carregar clientes: ' + err.message)
     }
   }

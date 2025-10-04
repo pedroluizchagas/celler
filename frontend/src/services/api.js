@@ -1,13 +1,8 @@
 import axios from 'axios'
+import { API_CONFIG } from '../config/api.config.js'
 
-// Configuração base da API
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || 'http://localhost:3001/api',
-  timeout: parseInt(import.meta.env.VITE_API_TIMEOUT || import.meta.env.REACT_APP_API_TIMEOUT) || 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-})
+// Configuração base da API usando configuração centralizada
+const api = axios.create(API_CONFIG)
 
 // Interceptor para requests
 api.interceptors.request.use(

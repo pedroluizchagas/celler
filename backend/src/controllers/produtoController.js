@@ -146,7 +146,8 @@ class ProdutoController {
   // Criar novo produto
   async store(req, res) {
     try {
-      LoggerManager.debug('Dados recebidos para criar produto:', req.body)
+      console.log('🔄 Criando novo produto...')
+      console.log('📋 Dados recebidos:', JSON.stringify(req.body, null, 2))
 
       const {
         nome,
@@ -165,6 +166,32 @@ class ProdutoController {
         localizacao,
         observacoes,
       } = req.body
+
+      // Validações básicas
+      if (!nome || nome.trim() === '') {
+        console.log('❌ Validação falhou: Nome é obrigatório')
+        return res.status(400).json({
+          success: false,
+          error: 'Nome do produto é obrigatório',
+        })
+      }
+
+      // Validar categoria_id se fornecido
+      if (categoria_id && categoria_id !== '' && !isNaN(parseInt(categoria_id))) {
+        try {
+          const categoriaExiste = await db.get('SELECT id FROM categorias WHERE id = ?', [parseInt(categoria_id)])
+          if (!categoriaExiste) {
+            console.log('❌ Categoria não encontrada:', categoria_id)
+            return res.status(400).json({
+              success: false,
+              error: 'Categoria não encontrada',
+            })
+          }
+        } catch (categoriaError) {
+          console.log('⚠️ Erro ao verificar categoria, continuando sem categoria:', categoriaError.message)
+          // Continuar sem categoria em caso de erro
+        }
+      }
 
       // Verificar códigos únicos (apenas se não estiverem vazios)
       if (codigo_barras && codigo_barras.trim()) {
@@ -321,14 +348,35 @@ class ProdutoController {
         data: novoProduto,
       })
     } catch (error) {
+      console.error('❌ Erro ao criar produto:', error)
+      console.error('📋 Dados que causaram erro:', JSON.stringify(req.body, null, 2))
+      console.error('🔍 Stack trace:', error.stack)
+      
       LoggerManager.error('Erro ao criar produto:', error)
       LoggerManager.error('Stack trace:', error.stack)
       LoggerManager.error('Dados que causaram erro:', req.body)
+      
+      // Verificar se é erro de constraint/validação
+      if (error.message && error.message.includes('UNIQUE constraint failed')) {
+        return res.status(400).json({
+          success: false,
+          error: 'Dados duplicados detectados',
+          details: 'Código de barras ou código interno já existe',
+        })
+      }
+      
+      if (error.message && error.message.includes('NOT NULL constraint failed')) {
+        return res.status(400).json({
+          success: false,
+          error: 'Dados obrigatórios não fornecidos',
+          details: error.message,
+        })
+      }
+      
       res.status(500).json({
         success: false,
         error: 'Erro interno do servidor',
-        details:
-          process.env.NODE_ENV === 'development' ? error.message : undefined,
+        details: process.env.NODE_ENV === 'development' ? error.message : 'Erro ao processar dados do produto',
       })
     }
   }

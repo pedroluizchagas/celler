@@ -15,10 +15,6 @@ const db = require('./utils/database-adapter')
 // Importar sistema de backup
 const backupManager = require('./utils/backup')
 
-// Importar WhatsApp Service
-const WhatsAppService = require('./services/whatsappService')
-const WhatsAppController = require('./controllers/whatsappController')
-
 // Importar migração de números
 const { migratePhoneNumbers } = require('./utils/migratePhoneNumbers')
 
@@ -30,17 +26,35 @@ const produtosRoutes = require('./routes/produtos')
 const categoriasRoutes = require('./routes/categorias')
 const vendasRoutes = require('./routes/vendas')
 const financeiroRoutes = require('./routes/financeiro')
-const whatsappRoutes = require('./routes/whatsapp')
 
 const app = express()
 const PORT = process.env.PORT || 3001
 
-// Inicializar WhatsApp Service
-const whatsappService = new WhatsAppService()
-const whatsappController = new WhatsAppController(whatsappService)
+// Inicializar WhatsApp Service condicionalmente
+let whatsappService = null
+let whatsappController = null
 
-console.log('🔧 WhatsApp Controller instanciado:', !!whatsappController)
-console.log('🔧 Método getQRCode disponível:', typeof whatsappController.getQRCode)
+// Verificar se WhatsApp está habilitado e se não estamos em produção problemática
+const whatsappEnabled = process.env.WHATSAPP_ENABLED === 'true'
+const isProduction = process.env.NODE_ENV === 'production'
+
+if (whatsappEnabled) {
+  try {
+    const WhatsAppService = require('./services/whatsappService')
+    const WhatsAppController = require('./controllers/whatsappController')
+    
+    whatsappService = new WhatsAppService()
+    whatsappController = new WhatsAppController(whatsappService)
+    
+    console.log('🔧 WhatsApp Controller instanciado:', !!whatsappController)
+    console.log('🔧 Método getQRCode disponível:', typeof whatsappController.getQRCode)
+  } catch (error) {
+    console.warn('⚠️ WhatsApp service não pôde ser inicializado:', error.message)
+    console.log('📱 Sistema funcionará sem WhatsApp')
+  }
+} else {
+  console.log('📱 WhatsApp desabilitado via configuração')
+}
 
 // Middlewares
 app.use(helmet())
@@ -55,8 +69,13 @@ app.use(
       'http://127.0.0.1:5173',
       'http://192.168.1.*',
       'https://assistencia-tecnica-mu.vercel.app',
+      'https://assistencia-tecnica-frontend.vercel.app',
+      'https://assistencia-tecnica-saytech.vercel.app',
+      /^https:\/\/.*\.vercel\.app$/,
     ], // Permite acesso local e da rede + produção
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   })
 )
 
@@ -88,59 +107,69 @@ app.use('/api/categorias', categoriasRoutes)
 app.use('/api/vendas', vendasRoutes)
 app.use('/api/financeiro', financeiroRoutes)
 
-// Configurar rotas do WhatsApp dinamicamente
-app.get(
-  '/api/whatsapp/status',
-  whatsappController.getStatus.bind(whatsappController)
-)
-app.get(
-  '/api/whatsapp/qr',
-  whatsappController.getQRCode.bind(whatsappController)
-)
-app.get(
-  '/api/whatsapp/chats',
-  whatsappController.getChats.bind(whatsappController)
-)
-app.get(
-  '/api/whatsapp/messages',
-  whatsappController.getMessages.bind(whatsappController)
-)
-app.post(
-  '/api/whatsapp/send',
-  whatsappController.sendMessage.bind(whatsappController)
-)
-app.put(
-  '/api/whatsapp/read',
-  whatsappController.markAsRead.bind(whatsappController)
-)
-app.get(
-  '/api/whatsapp/conversation/:phone_number/stats',
-  whatsappController.getConversationStats.bind(whatsappController)
-)
-app.get(
-  '/api/whatsapp/stats',
-  whatsappController.getStats.bind(whatsappController)
-)
-app.get(
-  '/api/whatsapp/queue',
-  whatsappController.getHumanQueue.bind(whatsappController)
-)
-app.put(
-  '/api/whatsapp/queue/:id',
-  whatsappController.updateQueueStatus.bind(whatsappController)
-)
-app.get(
-  '/api/whatsapp/settings',
-  whatsappController.getSettings.bind(whatsappController)
-)
-app.put(
-  '/api/whatsapp/settings',
-  whatsappController.updateSettings.bind(whatsappController)
-)
-app.get(
-  '/api/whatsapp/report',
-  whatsappController.getReport.bind(whatsappController)
-)
+// Configurar rotas do WhatsApp condicionalmente
+if (whatsappController) {
+  app.get(
+    '/api/whatsapp/status',
+    whatsappController.getStatus.bind(whatsappController)
+  )
+  app.get(
+    '/api/whatsapp/qr',
+    whatsappController.getQRCode.bind(whatsappController)
+  )
+  app.get(
+    '/api/whatsapp/chats',
+    whatsappController.getChats.bind(whatsappController)
+  )
+  app.get(
+    '/api/whatsapp/messages',
+    whatsappController.getMessages.bind(whatsappController)
+  )
+  app.post(
+    '/api/whatsapp/send',
+    whatsappController.sendMessage.bind(whatsappController)
+  )
+  app.put(
+    '/api/whatsapp/read',
+    whatsappController.markAsRead.bind(whatsappController)
+  )
+  app.get(
+    '/api/whatsapp/conversation/:phone_number/stats',
+    whatsappController.getConversationStats.bind(whatsappController)
+  )
+  app.get(
+    '/api/whatsapp/stats',
+    whatsappController.getStats.bind(whatsappController)
+  )
+  app.get(
+    '/api/whatsapp/queue',
+    whatsappController.getHumanQueue.bind(whatsappController)
+  )
+  app.put(
+    '/api/whatsapp/queue/:id',
+    whatsappController.updateQueueStatus.bind(whatsappController)
+  )
+  app.get(
+    '/api/whatsapp/settings',
+    whatsappController.getSettings.bind(whatsappController)
+  )
+  app.put(
+    '/api/whatsapp/settings',
+    whatsappController.updateSettings.bind(whatsappController)
+  )
+  app.get(
+    '/api/whatsapp/report',
+    whatsappController.getReport.bind(whatsappController)
+  )
+} else {
+  // Rotas de fallback quando WhatsApp não está disponível
+  app.all('/api/whatsapp/*', (req, res) => {
+    res.status(503).json({
+      error: 'WhatsApp service não está disponível',
+      message: 'O serviço WhatsApp está temporariamente indisponível'
+    })
+  })
+}
 
 // Rota para testar migração de números manualmente
 app.post('/api/whatsapp/migrate-numbers', async (req, res) => {

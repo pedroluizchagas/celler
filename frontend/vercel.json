@@ -1,28 +1,24 @@
 {
-  "version": 2,
-  "name": "assistencia-tecnica-frontend",
-  "builds": [
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install",
+  "devCommand": "npm run dev",
+  "rewrites": [
     {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/assets/(.*)",
-      "headers": {
-        "cache-control": "public, max-age=31536000, immutable"
-      }
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ],
   "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
     {
       "source": "/(.*)",
       "headers": [
@@ -33,8 +29,27 @@
         {
           "key": "X-Content-Type-Options",
           "value": "nosniff"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
         }
       ]
     }
-  ]
+  ],
+  "env": {
+    "REACT_APP_API_URL": "https://assistencia-tecnica-1k5g.onrender.com/api",
+    "REACT_APP_API_TIMEOUT": "30000",
+    "REACT_APP_SUPABASE_URL": "https://siazsdgodjfmpenmukon.supabase.co",
+    "REACT_APP_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpYXpzZGdvZGpmbXBlbm11a29uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg5ODA1ODcsImV4cCI6MjA3NDU1NjU4N30.x0Iy1FXsmQLrBVpzDRbrPzO65znX04twwFI-A4qBJa8",
+    "REACT_APP_NAME": "Sistema de Assistência Técnica",
+    "REACT_APP_VERSION": "1.0.0",
+    "REACT_APP_PWA_ENABLED": "true",
+    "REACT_APP_WHATSAPP_ENABLED": "true",
+    "REACT_APP_NOTIFICATIONS_ENABLED": "true"
+  }
 }

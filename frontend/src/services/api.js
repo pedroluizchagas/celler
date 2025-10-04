@@ -2,8 +2,8 @@ import axios from 'axios'
 
 // Configuração base da API
 const api = axios.create({
-  baseURL: 'http://localhost:3001/api',
-  timeout: 10000,
+  baseURL: import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || 'http://localhost:3001/api',
+  timeout: parseInt(import.meta.env.VITE_API_TIMEOUT || import.meta.env.REACT_APP_API_TIMEOUT) || 30000,
   headers: {
     'Content-Type': 'application/json',
   },

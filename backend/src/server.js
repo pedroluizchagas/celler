@@ -34,11 +34,23 @@ const PORT = process.env.PORT || 3001
 let whatsappService = null
 let whatsappController = null
 
-// Verificar se WhatsApp está habilitado e se não estamos em produção problemática
+// Verificar se WhatsApp está habilitado
 const whatsappEnabled = process.env.WHATSAPP_ENABLED === 'true'
 const isProduction = process.env.NODE_ENV === 'production'
 
-if (whatsappEnabled) {
+// Estado do WhatsApp service
+let whatsappInitializing = false
+let whatsappInitialized = false
+
+// Função para inicializar WhatsApp de forma assíncrona
+async function initializeWhatsApp() {
+  if (!whatsappEnabled || whatsappInitializing || whatsappInitialized) {
+    return
+  }
+
+  whatsappInitializing = true
+  console.log('🔄 Iniciando WhatsApp service de forma assíncrona...')
+
   try {
     const WhatsAppService = require('./services/whatsappService')
     const WhatsAppController = require('./controllers/whatsappController')
@@ -48,10 +60,24 @@ if (whatsappEnabled) {
     
     console.log('🔧 WhatsApp Controller instanciado:', !!whatsappController)
     console.log('🔧 Método getQRCode disponível:', typeof whatsappController.getQRCode)
+    
+    // Tentar inicializar o service
+    await whatsappService.start()
+    whatsappInitialized = true
+    console.log('✅ WhatsApp service inicializado com sucesso!')
+    
   } catch (error) {
-    console.warn('⚠️ WhatsApp service não pôde ser inicializado:', error.message)
+    console.warn('⚠️ WhatsApp service falhou na inicialização:', error.message)
     console.log('📱 Sistema funcionará sem WhatsApp')
+    whatsappService = null
+    whatsappController = null
+  } finally {
+    whatsappInitializing = false
   }
+}
+
+if (whatsappEnabled) {
+  console.log('📱 WhatsApp habilitado - inicialização será feita de forma assíncrona')
 } else {
   console.log('📱 WhatsApp desabilitado via configuração')
 }
@@ -108,68 +134,89 @@ app.use('/api/vendas', vendasRoutes)
 app.use('/api/financeiro', financeiroRoutes)
 
 // Configurar rotas do WhatsApp condicionalmente
-if (whatsappController) {
-  app.get(
-    '/api/whatsapp/status',
-    whatsappController.getStatus.bind(whatsappController)
-  )
-  app.get(
-    '/api/whatsapp/qr',
-    whatsappController.getQRCode.bind(whatsappController)
-  )
-  app.get(
-    '/api/whatsapp/chats',
-    whatsappController.getChats.bind(whatsappController)
-  )
-  app.get(
-    '/api/whatsapp/messages',
-    whatsappController.getMessages.bind(whatsappController)
-  )
-  app.post(
-    '/api/whatsapp/send',
-    whatsappController.sendMessage.bind(whatsappController)
-  )
-  app.put(
-    '/api/whatsapp/read',
-    whatsappController.markAsRead.bind(whatsappController)
-  )
-  app.get(
-    '/api/whatsapp/conversation/:phone_number/stats',
-    whatsappController.getConversationStats.bind(whatsappController)
-  )
-  app.get(
-    '/api/whatsapp/stats',
-    whatsappController.getStats.bind(whatsappController)
-  )
-  app.get(
-    '/api/whatsapp/queue',
-    whatsappController.getHumanQueue.bind(whatsappController)
-  )
-  app.put(
-    '/api/whatsapp/queue/:id',
-    whatsappController.updateQueueStatus.bind(whatsappController)
-  )
-  app.get(
-    '/api/whatsapp/settings',
-    whatsappController.getSettings.bind(whatsappController)
-  )
-  app.put(
-    '/api/whatsapp/settings',
-    whatsappController.updateSettings.bind(whatsappController)
-  )
-  app.get(
-    '/api/whatsapp/report',
-    whatsappController.getReport.bind(whatsappController)
-  )
-} else {
-  // Rotas de fallback quando WhatsApp não está disponível
-  app.all('/api/whatsapp/*', (req, res) => {
-    res.status(503).json({
-      error: 'WhatsApp service não está disponível',
-      message: 'O serviço WhatsApp está temporariamente indisponível'
+// Middleware para verificar e inicializar WhatsApp sob demanda
+async function ensureWhatsAppInitialized(req, res, next) {
+  if (!whatsappEnabled) {
+    return res.status(503).json({
+      error: 'WhatsApp service desabilitado',
+      message: 'O serviço WhatsApp está desabilitado na configuração'
     })
-  })
+  }
+
+  if (whatsappInitializing) {
+    return res.status(503).json({
+      error: 'WhatsApp service inicializando',
+      message: 'O serviço WhatsApp está sendo inicializado. Tente novamente em alguns segundos.'
+    })
+  }
+
+  if (!whatsappInitialized || !whatsappController) {
+    // Tentar inicializar
+    await initializeWhatsApp()
+    
+    if (!whatsappController) {
+      return res.status(503).json({
+        error: 'WhatsApp service não disponível',
+        message: 'O serviço WhatsApp não pôde ser inicializado'
+      })
+    }
+  }
+
+  next()
 }
+
+// Rotas do WhatsApp com inicialização sob demanda
+app.get('/api/whatsapp/status', ensureWhatsAppInitialized, (req, res) => {
+  whatsappController.getStatus(req, res)
+})
+
+app.get('/api/whatsapp/qr', ensureWhatsAppInitialized, (req, res) => {
+  whatsappController.getQRCode(req, res)
+})
+
+app.get('/api/whatsapp/chats', ensureWhatsAppInitialized, (req, res) => {
+  whatsappController.getChats(req, res)
+})
+
+app.get('/api/whatsapp/messages', ensureWhatsAppInitialized, (req, res) => {
+  whatsappController.getMessages(req, res)
+})
+
+app.post('/api/whatsapp/send', ensureWhatsAppInitialized, (req, res) => {
+  whatsappController.sendMessage(req, res)
+})
+
+app.put('/api/whatsapp/read', ensureWhatsAppInitialized, (req, res) => {
+  whatsappController.markAsRead(req, res)
+})
+
+app.get('/api/whatsapp/conversation/:phone_number/stats', ensureWhatsAppInitialized, (req, res) => {
+  whatsappController.getConversationStats(req, res)
+})
+
+app.get('/api/whatsapp/stats', ensureWhatsAppInitialized, (req, res) => {
+  whatsappController.getStats(req, res)
+})
+
+app.get('/api/whatsapp/queue', ensureWhatsAppInitialized, (req, res) => {
+  whatsappController.getHumanQueue(req, res)
+})
+
+app.put('/api/whatsapp/queue/:id', ensureWhatsAppInitialized, (req, res) => {
+  whatsappController.updateQueueStatus(req, res)
+})
+
+app.get('/api/whatsapp/settings', ensureWhatsAppInitialized, (req, res) => {
+  whatsappController.getSettings(req, res)
+})
+
+app.put('/api/whatsapp/settings', ensureWhatsAppInitialized, (req, res) => {
+  whatsappController.updateSettings(req, res)
+})
+
+app.get('/api/whatsapp/report', ensureWhatsAppInitialized, (req, res) => {
+  whatsappController.getReport(req, res)
+})
 
 // Rota para testar migração de números manualmente
 app.post('/api/whatsapp/migrate-numbers', async (req, res) => {
@@ -259,14 +306,8 @@ async function inicializarSistema() {
       )
     }
 
-    // 5. Inicializar WhatsApp Service (se habilitado)
-    if (whatsappService && whatsappEnabled) {
-      LoggerManager.info('🔄 Iniciando WhatsApp Service...')
-      await whatsappService.start()
-      LoggerManager.info('✅ WhatsApp Service inicializado com sucesso!')
-    } else {
-      LoggerManager.info('📱 WhatsApp Service desabilitado - pulando inicialização')
-    }
+    // 5. WhatsApp será inicializado sob demanda quando necessário
+    LoggerManager.info('📱 WhatsApp configurado para inicialização sob demanda')
   } catch (error) {
     LoggerManager.error('❌ Erro ao inicializar sistema:', error)
   }

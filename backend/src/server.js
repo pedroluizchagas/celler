@@ -259,10 +259,14 @@ async function inicializarSistema() {
       )
     }
 
-    // 5. Inicializar WhatsApp Service
-    LoggerManager.info('🔄 Iniciando WhatsApp Service...')
-    await whatsappService.start()
-    LoggerManager.info('✅ WhatsApp Service inicializado com sucesso!')
+    // 5. Inicializar WhatsApp Service (se habilitado)
+    if (whatsappService && whatsappEnabled) {
+      LoggerManager.info('🔄 Iniciando WhatsApp Service...')
+      await whatsappService.start()
+      LoggerManager.info('✅ WhatsApp Service inicializado com sucesso!')
+    } else {
+      LoggerManager.info('📱 WhatsApp Service desabilitado - pulando inicialização')
+    }
   } catch (error) {
     LoggerManager.error('❌ Erro ao inicializar sistema:', error)
   }

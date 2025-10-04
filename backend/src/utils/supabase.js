@@ -57,30 +57,15 @@ class SupabaseManager {
         return convertedQuery
       }
 
-      // Para queries que não podem ser convertidas, usar RPC
-      console.log(`🔍 Supabase.query - Tentando RPC execute_sql...`)
-      try {
-        const { query: convertedSql, params: convertedParams } = this.convertSQLiteToSupabase(sql, params)
-        
-        const { data, error } = await this.client.rpc('execute_sql', {
-          query: convertedSql,
-          params: convertedParams
-        })
-        
-        console.log(`🔍 Supabase.query - RPC Data: ${JSON.stringify(data)}`)
-        console.log(`🔍 Supabase.query - RPC Error: ${JSON.stringify(error)}`)
-        
-        if (error) throw error
-        return data || []
-      } catch (rpcError) {
-        console.warn('⚠️ Query SQL direta não suportada no Supabase:', sql)
-        console.warn('RPC também falhou:', rpcError.message)
-        console.log(`🔍 Supabase.query - Retornando array vazio devido ao erro RPC`)
-        return []
-      }
+      // Para queries que não podem ser convertidas, retornar array vazio
+      console.warn('⚠️ Query SQL complexa não suportada no Supabase (sem RPC):', sql)
+      console.log(`🔍 Supabase.query - Retornando array vazio para query não suportada`)
+      return []
     } catch (error) {
       console.error('❌ Erro na query Supabase:', error)
-      throw error
+      // Em caso de erro, retornar array vazio em vez de falhar
+      console.log(`🔍 Supabase.query - Retornando array vazio devido ao erro`)
+      return []
     }
   }
 
@@ -587,19 +572,9 @@ class SupabaseManager {
         return await this.handleDeleteCommand(convertedQuery, convertedParams)
       }
 
-      // Para outros comandos, tentar usar RPC
-      try {
-        const { data, error } = await this.client.rpc('execute_sql', {
-          query: convertedQuery,
-          params: convertedParams
-        })
-        
-        if (error) throw error
-        return { id: data?.id || null, changes: 1 }
-      } catch (rpcError) {
-        console.warn('⚠️ Comando SQL não suportado:', convertedQuery)
-        return { id: null, changes: 0 }
-      }
+      // Para outros comandos, retornar resultado padrão
+      console.warn('⚠️ Comando SQL não suportado (sem RPC):', convertedQuery)
+      return { id: null, changes: 0 }
     } catch (error) {
       console.error('❌ Erro no comando Supabase:', error)
       throw error

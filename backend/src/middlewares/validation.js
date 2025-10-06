@@ -133,15 +133,16 @@ const validateProduto = (req, res, next) => {
     })
   }
 
-  if (!categoria_id || isNaN(categoria_id)) {
+  // Validação de categoria_id (opcional, mas se fornecido deve ser válido)
+  if (categoria_id && categoria_id !== '' && isNaN(parseInt(categoria_id))) {
     return res.status(400).json({
-      error: 'Categoria é obrigatória e deve ser um ID válido',
+      error: 'Categoria deve ser um ID válido',
     })
   }
 
-  // Validação de tipo
-  const tiposValidos = ['peca', 'acessorio']
-  if (!tipo || !tiposValidos.includes(tipo)) {
+  // Validação de tipo (opcional, com valor padrão)
+  const tiposValidos = ['peca', 'acessorio', 'servico']
+  if (tipo && !tiposValidos.includes(tipo)) {
     return res.status(400).json({
       error: `Tipo deve ser um dos seguintes: ${tiposValidos.join(', ')}`,
     })

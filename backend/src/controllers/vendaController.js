@@ -292,11 +292,15 @@ class VendaController {
           ) {
             const tipo =
               produtoAtualizado.estoque_atual === 0
-                ? 'estoque_zero'
+                ? 'estoque_zerado'
                 : 'estoque_baixo'
+            const mensagem = 
+              produtoAtualizado.estoque_atual === 0 
+                ? `Produto ${produtoAtualizado.nome} está com estoque zerado após venda`
+                : `Produto ${produtoAtualizado.nome} está com estoque baixo após venda (${produtoAtualizado.estoque_atual} unidades)`
             await db.run(
-              `INSERT INTO alertas_estoque (produto_id, tipo) VALUES (?, ?)`,
-              [item.produto_id, tipo]
+              `INSERT INTO alertas_estoque (produto_id, tipo, mensagem) VALUES (?, ?, ?)`,
+              [item.produto_id, tipo, mensagem]
             )
           }
         }
@@ -617,7 +621,7 @@ class VendaController {
     // Verificar estoque baixo
     if (produto.estoque_atual <= produto.estoque_minimo) {
       const tipo =
-        produto.estoque_atual === 0 ? 'estoque_zero' : 'estoque_baixo'
+          produto.estoque_atual === 0 ? 'estoque_zerado' : 'estoque_baixo'
       await db.run(
         `
         INSERT INTO alertas_estoque (produto_id, tipo)

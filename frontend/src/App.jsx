@@ -16,8 +16,7 @@ import Estoque from './pages/Estoque/Estoque'
 import PDV from './pages/PDV/PDV'
 import Vendas from './pages/Vendas/Vendas'
 import Financeiro from './pages/Financeiro/Financeiro'
-// WhatsApp removido do sistema
-import BotIA from './pages/BotIA/BotIA'
+// WhatsApp e Bot IA removidos do sistema
 import ThemeDemo from './components/ThemeDemo/ThemeDemo'
 
 // Componente interno que usa o contexto
@@ -39,8 +38,7 @@ function AppContent() {
             <Route path="/pdv" element={<PDV />} />
             <Route path="/vendas" element={<Vendas />} />
             <Route path="/financeiro" element={<Financeiro />} />
-            {/* WhatsApp removido do sistema */}
-            <Route path="/bot-ia" element={<BotIA />} />
+            {/* WhatsApp e Bot IA removidos do sistema */}
             <Route path="/backup" element={<Backup />} />
             <Route path="/theme-demo" element={<ThemeDemo />} />
           </Routes>

@@ -27,8 +27,7 @@ import {
   PointOfSale as PointOfSaleIcon,
   Receipt as ReceiptIcon,
   AccountBalance as AccountBalanceIcon,
-  // WhatsApp removido do sistema
-  SmartToy as BotIcon,
+  // WhatsApp e Bot IA removidos do sistema
   Backup as BackupIcon,
   Palette as PaletteIcon,
   Phone as PhoneIcon,
@@ -61,8 +60,7 @@ const Layout = ({ children }) => {
     { text: 'PDV', icon: <PointOfSaleIcon />, path: '/pdv' },
     { text: 'Vendas', icon: <ReceiptIcon />, path: '/vendas' },
     { text: 'Financeiro', icon: <AccountBalanceIcon />, path: '/financeiro' },
-    // WhatsApp removido do sistema
-    { text: 'Bot IA', icon: <BotIcon />, path: '/bot-ia' },
+    // WhatsApp e Bot IA removidos do sistema
     { text: 'Backup', icon: <BackupIcon />, path: '/backup' },
     { text: 'Demonstração', icon: <PaletteIcon />, path: '/theme-demo' },
   ]

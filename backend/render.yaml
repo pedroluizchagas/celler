@@ -26,7 +26,7 @@ services:
       - key: SESSION_SECRET
         sync: false
       - key: WHATSAPP_ENABLED
-        value: true
+        value: false
       - key: LOG_LEVEL
         value: info
       - key: UPLOAD_MAX_SIZE

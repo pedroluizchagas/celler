@@ -15,8 +15,7 @@ const db = require('./utils/database-adapter')
 // Importar sistema de backup
 const backupManager = require('./utils/backup')
 
-// Importar migração de números
-const { migratePhoneNumbers } = require('./utils/migratePhoneNumbers')
+// Migração de números removida (WhatsApp desabilitado)
 
 // Importar rotas
 const clientesRoutes = require('./routes/clientes')
@@ -30,64 +29,10 @@ const financeiroRoutes = require('./routes/financeiro')
 const app = express()
 const PORT = process.env.PORT || 3001
 
-// Inicializar WhatsApp Service condicionalmente
-let whatsappService = null
-let whatsappController = null
-
-// Verificar se WhatsApp está habilitado
-const whatsappEnabled = process.env.WHATSAPP_ENABLED === 'true'
+// WhatsApp completamente removido do sistema
 const isProduction = process.env.NODE_ENV === 'production'
 
-// Estado do WhatsApp service
-let whatsappInitializing = false
-let whatsappInitialized = false
-
-// Função para inicializar WhatsApp de forma assíncrona
-async function initializeWhatsApp() {
-  if (!whatsappEnabled || whatsappInitializing || whatsappInitialized) {
-    return
-  }
-
-  whatsappInitializing = true
-  console.log('🔄 Iniciando WhatsApp service de forma assíncrona...')
-
-  try {
-    // Verificar se os módulos existem antes de tentar carregá-los
-    const WhatsAppService = require('./services/whatsappService')
-    const WhatsAppController = require('./controllers/whatsappController')
-    
-    whatsappService = new WhatsAppService()
-    whatsappController = new WhatsAppController(whatsappService)
-    
-    console.log('🔧 WhatsApp Controller instanciado:', !!whatsappController)
-    console.log('🔧 Método getQRCode disponível:', typeof whatsappController.getQRCode)
-    
-    // Tentar inicializar o service com timeout
-    const initPromise = whatsappService.start()
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Timeout na inicialização do WhatsApp')), 30000)
-    )
-    
-    await Promise.race([initPromise, timeoutPromise])
-    whatsappInitialized = true
-    console.log('✅ WhatsApp service inicializado com sucesso!')
-    
-  } catch (error) {
-    console.warn('⚠️ WhatsApp service falhou na inicialização:', error.message)
-    console.log('📱 Sistema funcionará sem WhatsApp - isso não afeta outras funcionalidades')
-    whatsappService = null
-    whatsappController = null
-    whatsappInitialized = false
-  } finally {
-    whatsappInitializing = false
-  }
-}
-
-if (whatsappEnabled) {
-  console.log('📱 WhatsApp habilitado - inicialização será feita de forma assíncrona')
-} else {
-  console.log('📱 WhatsApp desabilitado via configuração')
-}
+console.log('📱 WhatsApp removido do sistema - funcionalidades desabilitadas permanentemente')
 
 // Middlewares
 app.use(helmet())
@@ -186,9 +131,9 @@ app.get('/api/health', async (req, res) => {
       environment: process.env.NODE_ENV || 'development',
       version: '1.0.0',
       services: {
-        database: 'checking...',
-        whatsapp: whatsappEnabled ? (whatsappInitialized ? 'ready' : 'initializing') : 'disabled'
-      }
+         database: 'checking...',
+         whatsapp: 'removed'
+       }
     }
 
     // Verificar conexão com banco de dados
@@ -219,128 +164,14 @@ app.use('/api/categorias', categoriasRoutes)
 app.use('/api/vendas', vendasRoutes)
 app.use('/api/financeiro', financeiroRoutes)
 
-// Configurar rotas do WhatsApp condicionalmente
-// Middleware para garantir que WhatsApp está inicializado
-async function ensureWhatsAppInitialized(req, res, next) {
-  if (!whatsappEnabled) {
-    return res.status(503).json({
-      success: false,
-      error: 'WhatsApp não está habilitado neste servidor',
-      code: 'WHATSAPP_DISABLED'
-    })
-  }
-
-  if (whatsappInitializing) {
-    return res.status(503).json({
-      success: false,
-      error: 'WhatsApp ainda está inicializando. Tente novamente em alguns segundos.',
-      code: 'WHATSAPP_INITIALIZING'
-    })
-  }
-
-  if (!whatsappInitialized || !whatsappService || !whatsappController) {
-    // Tentar inicializar novamente apenas se não estiver em processo
-    if (!whatsappInitializing) {
-      try {
-        console.log('🔄 Tentando reinicializar WhatsApp...')
-        await initializeWhatsApp()
-        if (!whatsappInitialized) {
-          throw new Error('Falha na reinicialização')
-        }
-      } catch (error) {
-        console.warn('⚠️ Falha na reinicialização do WhatsApp:', error.message)
-        return res.status(503).json({
-          success: false,
-          error: 'WhatsApp service não está disponível no momento',
-          code: 'WHATSAPP_UNAVAILABLE',
-          details: error.message
-        })
-      }
-    } else {
-      return res.status(503).json({
-        success: false,
-        error: 'WhatsApp está sendo reinicializado. Tente novamente em alguns segundos.',
-        code: 'WHATSAPP_REINITIALIZING'
-      })
-    }
-  }
-
-  next()
-}
-
-// Rotas do WhatsApp com inicialização sob demanda
-app.get('/api/whatsapp/status', ensureWhatsAppInitialized, (req, res) => {
-  whatsappController.getStatus(req, res)
-})
-
-app.get('/api/whatsapp/qr', ensureWhatsAppInitialized, (req, res) => {
-  whatsappController.getQRCode(req, res)
-})
-
-app.get('/api/whatsapp/chats', ensureWhatsAppInitialized, (req, res) => {
-  whatsappController.getChats(req, res)
-})
-
-app.get('/api/whatsapp/messages', ensureWhatsAppInitialized, (req, res) => {
-  whatsappController.getMessages(req, res)
-})
-
-app.post('/api/whatsapp/send', ensureWhatsAppInitialized, (req, res) => {
-  whatsappController.sendMessage(req, res)
-})
-
-app.put('/api/whatsapp/read', ensureWhatsAppInitialized, (req, res) => {
-  whatsappController.markAsRead(req, res)
-})
-
-app.get('/api/whatsapp/conversation/:phone_number/stats', ensureWhatsAppInitialized, (req, res) => {
-  whatsappController.getConversationStats(req, res)
-})
-
-app.get('/api/whatsapp/stats', ensureWhatsAppInitialized, (req, res) => {
-  whatsappController.getStats(req, res)
-})
-
-app.get('/api/whatsapp/queue', ensureWhatsAppInitialized, (req, res) => {
-  whatsappController.getHumanQueue(req, res)
-})
-
-app.put('/api/whatsapp/queue/:id', ensureWhatsAppInitialized, (req, res) => {
-  whatsappController.updateQueueStatus(req, res)
-})
-
-app.get('/api/whatsapp/settings', ensureWhatsAppInitialized, (req, res) => {
-  whatsappController.getSettings(req, res)
-})
-
-app.put('/api/whatsapp/settings', ensureWhatsAppInitialized, (req, res) => {
-  whatsappController.updateSettings(req, res)
-})
-
-app.get('/api/whatsapp/report', ensureWhatsAppInitialized, (req, res) => {
-  whatsappController.getReport(req, res)
-})
-
-// Rota para testar migração de números manualmente
-app.post('/api/whatsapp/migrate-numbers', async (req, res) => {
-  try {
-    LoggerManager.info('🔄 Executando migração manual de números...')
-    const result = await migratePhoneNumbers()
-
-    res.json({
-      success: result.success,
-      message: result.success
-        ? `Migração concluída: ${result.migratedCount} mensagens normalizadas`
-        : `Erro na migração: ${result.error}`,
-      data: result,
-    })
-  } catch (error) {
-    LoggerManager.error('❌ Erro na migração manual:', error)
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    })
-  }
+// WhatsApp removido - todas as rotas desabilitadas
+app.all('/api/whatsapp/*', (req, res) => {
+  res.status(410).json({
+    success: false,
+    error: 'WhatsApp foi removido do sistema',
+    code: 'WHATSAPP_REMOVED',
+    message: 'As funcionalidades do WhatsApp foram permanentemente desabilitadas'
+  })
 })
 
 // Middleware de erro com logging
@@ -380,9 +211,7 @@ async function inicializarSistema() {
   
   const initResults = {
     database: false,
-    whatsapp: false,
-    backup: false,
-    migration: false
+    backup: false
   }
   
   // 1. Verificar conexão com banco de dados
@@ -407,53 +236,14 @@ async function inicializarSistema() {
     LoggerManager.info('💾 Backups não estarão disponíveis')
   }
 
-  // 3. Aguardar que o banco esteja completamente pronto (apenas se conectado)
-  if (initResults.database) {
-    try {
-      LoggerManager.info('⏳ Aguardando inicialização completa do banco...')
-      await new Promise((resolve) => setTimeout(resolve, 3000)) // Aguarda 3 segundos
-
-      // Verificar se as tabelas WhatsApp existem
-      await db.get('SELECT COUNT(*) FROM whatsapp_settings')
-      LoggerManager.info('✅ Tabelas WhatsApp verificadas e prontas')
-      
-      // 4. Executar migração de números de telefone
-      try {
-        LoggerManager.info('🔄 Verificando necessidade de migração de números...')
-        const migrationResult = await migratePhoneNumbers()
-        if (migrationResult.success && migrationResult.migratedCount > 0) {
-          LoggerManager.info(
-            `✅ Migração concluída: ${migrationResult.migratedCount} mensagens normalizadas`
-          )
-        }
-        initResults.migration = true
-      } catch (error) {
-        LoggerManager.error(
-          '❌ Erro na migração de números (continuando):',
-          error
-        )
-      }
-    } catch (error) {
-      LoggerManager.error('❌ Erro ao verificar tabelas WhatsApp:', error)
-      LoggerManager.warn('⚠️ Funcionalidades WhatsApp podem não funcionar corretamente')
-    }
-  }
-
-  // 5. WhatsApp será inicializado sob demanda quando necessário
-  if (whatsappEnabled) {
-    LoggerManager.info('📱 WhatsApp configurado para inicialização sob demanda')
-    initResults.whatsapp = 'on-demand'
-  } else {
-    LoggerManager.info('📱 WhatsApp desabilitado')
-    initResults.whatsapp = 'disabled'
-  }
+  // 3. WhatsApp removido do sistema
+  LoggerManager.info('📱 WhatsApp removido permanentemente do sistema')
   
   // Relatório de inicialização
   LoggerManager.info('📊 Relatório de inicialização:')
   LoggerManager.info(`   Database: ${initResults.database ? '✅' : '❌'}`)
-  LoggerManager.info(`   WhatsApp: ${initResults.whatsapp === 'disabled' ? '⏸️' : (initResults.whatsapp === 'on-demand' ? '🔄' : '❌')}`)
+  LoggerManager.info(`   WhatsApp: 🗑️ Removido`)
   LoggerManager.info(`   Backup: ${initResults.backup ? '✅' : '❌'}`)
-  LoggerManager.info(`   Migration: ${initResults.migration ? '✅' : '❌'}`)
   
   if (initResults.database) {
     LoggerManager.info('🎉 Sistema inicializado com sucesso!')

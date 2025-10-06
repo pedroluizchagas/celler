@@ -48,8 +48,7 @@ class BackupManager {
         'categorias',
         'movimentacoes_financeiras',
         'categorias_financeiras',
-        'whatsapp_messages',
-        'whatsapp_contacts'
+        // Tabelas WhatsApp removidas do sistema
       ]
 
       const backupData = {
@@ -137,7 +136,7 @@ class BackupManager {
         { nome: 'ordens', campoData: 'updated_at' },
         { nome: 'produtos', campoData: 'updated_at' },
         { nome: 'movimentacoes_financeiras', campoData: 'created_at' },
-        { nome: 'whatsapp_messages', campoData: 'timestamp' }
+        // Tabela WhatsApp removida do sistema
       ]
 
       // Fazer backup incremental de cada tabela

@@ -16,7 +16,7 @@ import Estoque from './pages/Estoque/Estoque'
 import PDV from './pages/PDV/PDV'
 import Vendas from './pages/Vendas/Vendas'
 import Financeiro from './pages/Financeiro/Financeiro'
-import WhatsApp from './pages/WhatsApp/WhatsApp'
+// WhatsApp removido do sistema
 import BotIA from './pages/BotIA/BotIA'
 import ThemeDemo from './components/ThemeDemo/ThemeDemo'
 
@@ -39,7 +39,7 @@ function AppContent() {
             <Route path="/pdv" element={<PDV />} />
             <Route path="/vendas" element={<Vendas />} />
             <Route path="/financeiro" element={<Financeiro />} />
-            <Route path="/whatsapp" element={<WhatsApp />} />
+            {/* WhatsApp removido do sistema */}
             <Route path="/bot-ia" element={<BotIA />} />
             <Route path="/backup" element={<Backup />} />
             <Route path="/theme-demo" element={<ThemeDemo />} />

@@ -91,18 +91,8 @@ async function checkServices() {
   
   const services = [];
   
-  // Verificar se WhatsApp está habilitado
-  const whatsappEnabled = process.env.WHATSAPP_ENABLED === 'true';
-  if (whatsappEnabled) {
-    try {
-      require('./src/services/whatsappService');
-      services.push('WhatsApp: Disponível');
-    } catch (error) {
-      services.push(`WhatsApp: Erro - ${error.message}`);
-    }
-  } else {
-    services.push('WhatsApp: Desabilitado');
-  }
+  // WhatsApp removido do sistema
+  services.push('WhatsApp: Removido permanentemente');
   
   // Verificar uploads
   const fs = require('fs');

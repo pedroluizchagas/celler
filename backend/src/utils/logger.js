@@ -172,6 +172,7 @@ class LoggerManager {
       userAgent: req.get('User-Agent'),
       statusCode: res.statusCode,
       responseTime,
+      requestId: req.headers['x-request-id'] || req.id,
       timestamp: new Date().toISOString(),
     })
   }
@@ -354,6 +355,7 @@ const errorLogger = (err, req, res, next) => {
     url: req.url,
     ip: req.ip,
     userAgent: req.get('User-Agent'),
+    requestId: req.headers['x-request-id'] || req.id,
   })
 
   next(err)

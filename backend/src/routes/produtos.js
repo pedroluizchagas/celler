@@ -1,11 +1,13 @@
 const express = require('express')
 const router = express.Router()
 const produtoController = require('../controllers/produtoController')
+const { listProdutos, postProduto } = require('../modules/produtos/produtos.controller')
 const { validateProduto, validateId } = require('../middlewares/validation')
 
 // Rotas de produtos
-router.get('/', produtoController.index)
-router.post('/', validateProduto, produtoController.store)
+// Migrado para repositório (SELECT simples + POST tipado)
+router.get('/', listProdutos)
+router.post('/', postProduto)
 router.get('/stats', produtoController.stats)
 router.get('/debug', async (req, res) => {
   try {

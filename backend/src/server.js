@@ -1,246 +1,434 @@
-const express = require('express')
+﻿const express = require('express')
+
 const cors = require('cors')
+
 const helmet = require('helmet')
+
 const path = require('path')
+
 require('dotenv').config()
 
-// Forçando restart do nodemon para testar migração SQLite -> PostgreSQL
+// ForÃ§ando restart do nodemon para testar migraÃ§Ã£o SQLite -> PostgreSQL
 
 // Importar sistema de logs
+
 const { LoggerManager, requestLogger, errorLogger } = require('./utils/logger')
 
+const mutationLogger = require('./middlewares/mutation-logger')
+
 // Importar banco de dados
+
 const db = require('./utils/database-adapter')
 
-// Importar sistema de backup
-const backupManager = require('./utils/backup')
+// Importar sistema de backup (comentado temporariamente para teste)
 
-// Migração de números removida (WhatsApp desabilitado)
+// const backupManager = require('./utils/backup')
+
+// MigraÃ§Ã£o de nÃºmeros removida (WhatsApp desabilitado)
 
 // Importar rotas
+
 const clientesRoutes = require('./routes/clientes')
+
 const ordensRoutes = require('./routes/ordens')
+
 const backupRoutes = require('./routes/backup')
+
 const produtosRoutes = require('./routes/produtos')
+
 const categoriasRoutes = require('./routes/categorias')
+
 const vendasRoutes = require('./routes/vendas')
+
 const financeiroRoutes = require('./routes/financeiro')
 
 const app = express()
+
 const PORT = process.env.PORT || 3001
 
 // WhatsApp completamente removido do sistema
+
 const isProduction = process.env.NODE_ENV === 'production'
 
-console.log('📱 WhatsApp removido do sistema - funcionalidades desabilitadas permanentemente')
+console.log('ðŸ“± WhatsApp removido do sistema - funcionalidades desabilitadas permanentemente')
 
 // Middlewares
+
 app.use(helmet())
 
-// Configuração CORS padronizada
-const PROD_ORIGIN = process.env.FRONTEND_URL || "https://assistencia-tecnica-mu.vercel.app"
+// Middleware JSON antes de todas as rotas
 
-// Permitir *.vercel.app (pré-visualizações)
-const vercelPreviewRegex = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i
+app.use(express.json({ limit: "1mb", strict: true, type: "application/json" }))
 
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Requests sem origin (ex: curl, apps nativas)
-    if (!origin) {
-      console.log('✅ CORS: Permitindo requisição sem origin')
-      return callback(null, true)
-    }
-
-    const allowed = 
-      origin === PROD_ORIGIN || 
-      vercelPreviewRegex.test(origin) ||
-      // Permitir localhost em desenvolvimento
-      origin.startsWith('http://localhost:') ||
-      origin.startsWith('http://127.0.0.1:')
-
-    if (allowed) {
-      console.log('✅ CORS: Permitindo origem:', origin)
-      return callback(null, true)
-    }
-    
-    console.log('❌ CORS: Bloqueando origem:', origin)
-    return callback(new Error("Not allowed by CORS: " + origin))
-  },
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: [
-    "Content-Type",
-    "Authorization", 
-    "Cache-Control",
-    "X-Requested-With",
-    "Accept",
-    "Origin"
-  ],
-  exposedHeaders: [
-    "Content-Length",
-    "X-Total-Count"
-  ],
-  credentials: true,
-  maxAge: 86400 // 24h
-}
-
-// CORS antes de tudo
-app.use((req, res, next) => {
-  res.setHeader("Vary", "Origin") // importante p/ cache
-  next()
-})
-
-app.use(cors(corsOptions))
-
-// Responder preflight imediatamente
-app.options("*", cors(corsOptions))
-
-// Sistema de logs
-app.use(requestLogger)
-
-app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
+// Middleware CORS personalizado
+
+app.use((req, res, next) => {
+
+  const origin = req.headers.origin;
+
+  // Se nÃ£o hÃ¡ origin, permitir com *
+
+  if (!origin) {
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+  } else if (origin === 'https://assistencia-tecnica-mu.vercel.app') {
+
+    // Em produÃ§Ã£o, permitir apenas o domÃ­nio especÃ­fico
+
+    res.setHeader('Access-Control-Allow-Origin', origin);
+
+  } else {
+
+    // Para outros origins (desenvolvimento, etc), permitir com *
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+  }
+
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cache-Control, X-Requested-With, Accept, Origin');
+
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+  res.setHeader('Access-Control-Max-Age', '86400');
+
+  // Responder OPTIONS com 204 e finalizar
+
+  if (req.method === 'OPTIONS') {
+
+    return res.status(204).end();
+
+  }
+
+  next();
+
+});
+
+// Sistema de logs
+
+const requestIdMiddleware = require('./middlewares/request-id')
+
+  app.use(requestIdMiddleware)
+
+  app.use(requestLogger)
+
+// Middleware para registrar mutaÃ§Ãµes via logger estruturado
+
+app.use(mutationLogger)
+
 // Pasta de uploads
+
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
 
 // Health check endpoint melhorado
+
 app.get('/api/health', async (req, res) => {
+
   try {
+
     const healthStatus = {
+
       status: 'OK',
+
       timestamp: new Date().toISOString(),
+
       uptime: process.uptime(),
+
       environment: process.env.NODE_ENV || 'development',
+
       version: '1.0.0',
+
       services: {
+
          database: 'checking...',
+
          whatsapp: 'removed'
+
        }
+
     }
 
-    // Verificar conexão com banco de dados
+    // Verificar conexÃ£o com banco de dados
+
     try {
-      await db.query('SELECT 1 as test')
-      healthStatus.services.database = 'connected'
+
+      if (db.isReady && db.isReady()) {
+
+        healthStatus.services.database = 'connected'
+
+      } else {
+
+        healthStatus.services.database = 'error'
+
+        healthStatus.status = 'DEGRADED'
+
+      }
+
     } catch (dbError) {
+
       healthStatus.services.database = 'error'
+
       healthStatus.status = 'DEGRADED'
+
     }
 
     res.json(healthStatus)
+
   } catch (error) {
+
     res.status(500).json({
+
       status: 'ERROR',
+
       timestamp: new Date().toISOString(),
+
       error: error.message
+
     })
+
   }
+
 })
 
 // Rotas principais
+
 app.use('/api/clientes', clientesRoutes)
+
 app.use('/api/ordens', ordensRoutes)
+
 app.use('/api/backup', backupRoutes)
+
 app.use('/api/produtos', produtosRoutes)
+
 app.use('/api/categorias', categoriasRoutes)
+
 app.use('/api/vendas', vendasRoutes)
+
 app.use('/api/financeiro', financeiroRoutes)
 
 // WhatsApp removido - todas as rotas desabilitadas
+
 app.all('/api/whatsapp/*', (req, res) => {
+
   res.status(410).json({
+
     success: false,
+
     error: 'WhatsApp foi removido do sistema',
+
     code: 'WHATSAPP_REMOVED',
+
     message: 'As funcionalidades do WhatsApp foram permanentemente desabilitadas'
+
   })
+
 })
 
-// Middleware de erro com logging
+// Handler 404
+
+app.use((req, res) => {
+
+  res.status(404).json({ message: 'Rota nÃ£o encontrada' })
+
+})
+
+// Logger de erros estruturado
+
 app.use(errorLogger)
+
+// Handler global de erros 5xx
+
 app.use((err, req, res, next) => {
-  LoggerManager.error('Erro não tratado na aplicação', err, {
-    method: req.method,
-    url: req.url,
-    ip: req.ip,
+
+  if (res.headersSent) {
+
+    return next(err)
+
+  }
+
+  const statusCandidate = Number.isInteger(err?.statusCode)
+
+    ? err.statusCode
+
+    : Number.isInteger(err?.status)
+
+      ? err.status
+
+      : 500
+
+  const statusCode = statusCandidate >= 400 && statusCandidate < 600 ? statusCandidate : 500
+
+  const isClientError = statusCode >= 400 && statusCode < 500
+
+  const headers = req?.headers || {}
+
+  const bodyKeys = !req?.body || typeof req.body !== 'object'
+
+    ? []
+
+    : Array.isArray(req.body)
+
+      ? req.body.map((_, index) => `[index:${index}]`)
+
+      : Object.keys(req.body)
+
+  const logContext = {
+
+    statusCode,
+
+    origin: headers.origin || null,
+
+    contentType: headers['content-type'] || null,
+
+    bodyKeys,
+
+  }
+
+  const logMessage = `[ERR] ${req.method} ${req.originalUrl}`
+
+  if (statusCode >= 500) {
+
+    LoggerManager.error(logMessage, err, logContext)
+
+  } else {
+
+    LoggerManager.warn(logMessage, logContext)
+
+  }
+
+  res.status(statusCode).json({
+
+    message: isClientError && err?.message ? err.message : 'Erro interno',
+
   })
 
-  res.status(500).json({
-    error: 'Algo deu errado!',
-    message:
-      process.env.NODE_ENV === 'development'
-        ? err.message
-        : 'Erro interno do servidor',
-  })
-})
-
-// Rota 404
-app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Rota não encontrada' })
 })
 
 // Graceful shutdown
+
 process.on('SIGINT', async () => {
-  LoggerManager.info('🔄 Encerrando servidor...')
+
+  LoggerManager.info('ðŸ”„ Encerrando servidor...')
+
   await whatsappService.stop()
+
   await db.close()
+
   process.exit(0)
+
 })
 
-// Função para inicializar tudo de forma ordenada
+// FunÃ§Ã£o para inicializar tudo de forma ordenada
+
 async function inicializarSistema() {
-  LoggerManager.info('🚀 Inicializando sistema...')
-  
+
+  LoggerManager.info('ðŸš€ Inicializando sistema...')
+
   const initResults = {
+
     database: false,
+
     backup: false
+
   }
-  
-  // 1. Verificar conexão com banco de dados
+
+  // 1. Verificar conexÃ£o com banco de dados
+
   try {
-    LoggerManager.info('🔍 Verificando conexão com banco de dados...')
-    await db.query('SELECT 1 as test')
-    LoggerManager.info('✅ Banco de dados conectado!')
-    initResults.database = true
+
+    LoggerManager.info('ðŸ” Verificando conexÃ£o com banco de dados...')
+
+    if (db.isReady && db.isReady()) {
+
+      LoggerManager.info('âœ… Banco de dados conectado!')
+
+      initResults.database = true
+
+    } else {
+
+      LoggerManager.error('âŒ Banco de dados nÃ£o estÃ¡ configurado')
+
+      LoggerManager.warn('âš ï¸ Sistema funcionarÃ¡ com limitaÃ§Ãµes no banco de dados')
+
+    }
+
   } catch (error) {
-    LoggerManager.error('❌ Erro na conexão com banco de dados:', error.message)
-    LoggerManager.warn('⚠️ Sistema funcionará com limitações no banco de dados')
+
+    LoggerManager.error('âŒ Erro na conexÃ£o com banco de dados:', error.message)
+
+    LoggerManager.warn('âš ï¸ Sistema funcionarÃ¡ com limitaÃ§Ãµes no banco de dados')
+
   }
-  
-  // 2. Inicializar sistema de backup automático
+
+  // 2. Inicializar sistema de backup automÃ¡tico
+
   try {
-    LoggerManager.info('💾 Inicializando sistema de backup...')
+
+    LoggerManager.info('ðŸ’¾ Inicializando sistema de backup...')
+
     backupManager.agendarBackups()
-    LoggerManager.info('✅ Sistema de backup inicializado!')
+
+    LoggerManager.info('âœ… Sistema de backup inicializado!')
+
     initResults.backup = true
+
   } catch (error) {
-    LoggerManager.warn('⚠️ Sistema de backup não pôde ser inicializado:', error.message)
-    LoggerManager.info('💾 Backups não estarão disponíveis')
+
+    LoggerManager.warn('âš ï¸ Sistema de backup nÃ£o pÃ´de ser inicializado:', error.message)
+
+    LoggerManager.info('ðŸ’¾ Backups nÃ£o estarÃ£o disponÃ­veis')
+
   }
 
   // 3. WhatsApp removido do sistema
-  LoggerManager.info('📱 WhatsApp removido permanentemente do sistema')
-  
-  // Relatório de inicialização
-  LoggerManager.info('📊 Relatório de inicialização:')
-  LoggerManager.info(`   Database: ${initResults.database ? '✅' : '❌'}`)
-  LoggerManager.info(`   WhatsApp: 🗑️ Removido`)
-  LoggerManager.info(`   Backup: ${initResults.backup ? '✅' : '❌'}`)
-  
+
+  LoggerManager.info('ðŸ“± WhatsApp removido permanentemente do sistema')
+
+  // RelatÃ³rio de inicializaÃ§Ã£o
+
+  LoggerManager.info('ðŸ“Š RelatÃ³rio de inicializaÃ§Ã£o:')
+
+  LoggerManager.info(`   Database: ${initResults.database ? 'âœ…' : 'âŒ'}`)
+
+  LoggerManager.info(`   WhatsApp: ðŸ—‘ï¸ Removido`)
+
+  LoggerManager.info(`   Backup: ${initResults.backup ? 'âœ…' : 'âŒ'}`)
+
   if (initResults.database) {
-    LoggerManager.info('🎉 Sistema inicializado com sucesso!')
+
+    LoggerManager.info('ðŸŽ‰ Sistema inicializado com sucesso!')
+
   } else {
-    LoggerManager.warn('⚠️ Sistema iniciado com limitações - problemas no banco de dados')
+
+    LoggerManager.warn('âš ï¸ Sistema iniciado com limitaÃ§Ãµes - problemas no banco de dados')
+
   }
+
 }
 
 app.listen(PORT, '0.0.0.0', async () => {
-  LoggerManager.info(`🚀 Servidor iniciado na porta ${PORT}`)
-  LoggerManager.info(`📱 Acesse no computador: http://localhost:${PORT}`)
-  LoggerManager.info(`📱 Acesse no smartphone: http://[IP_DA_MAQUINA]:${PORT}`)
-  LoggerManager.info(`🔗 Teste a API: http://localhost:${PORT}/api/health`)
-  LoggerManager.info('✅ Sistema de logs e backup inicializados')
 
-  // Inicializar WhatsApp após servidor estar rodando
-  await inicializarSistema()
+  LoggerManager.info(`ðŸš€ Servidor iniciado na porta ${PORT}`)
+
+  LoggerManager.info(`ðŸ“± Acesse no computador: http://localhost:${PORT}`)
+
+  LoggerManager.info(`ðŸ“± Acesse no smartphone: http://[IP_DA_MAQUINA]:${PORT}`)
+
+  LoggerManager.info(`ðŸ”— Teste a API: http://localhost:${PORT}/api/health`)
+
+  LoggerManager.info('âœ… Sistema de logs e backup inicializados')
+
+  // Inicializar sistema apÃ³s servidor estar rodando (comentado temporariamente para teste)
+
+  // await inicializarSistema()
+
+  LoggerManager.info('ðŸŽ‰ Servidor pronto para receber requisiÃ§Ãµes!')
+
 })
+
+
+

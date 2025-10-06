@@ -12,11 +12,8 @@ class ClienteController {
         total: clientes.length,
       })
     } catch (error) {
-      console.error('Erro ao listar clientes:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao listar clientes')
     }
   }
 
@@ -50,13 +47,13 @@ class ClienteController {
       // Buscar ordens do cliente
       try {
         const ordens = await db.find('ordens', { cliente_id: parseInt(id) })
-        console.log('📋 Ordens encontradas:', ordens.length)
+        console.log('📋 📋 Ordens encontradas:', ordens.length)
 
         res.json({
           success: true,
           data: {
             ...cliente,
-            ordens,
+            ordens: (Array.isArray(ordens) ? ordens : []),
           },
         })
       } catch (ordensError) {
@@ -72,10 +69,8 @@ class ClienteController {
       }
     } catch (error) {
       console.error('❌ Erro ao buscar cliente:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro interno do servidor')
     }
   }
 
@@ -87,7 +82,7 @@ class ClienteController {
       // Verificar se já existe cliente com o mesmo telefone
       const clientesExistentes = await db.find('clientes', { telefone })
 
-      if (clientesExistentes.length > 0) {
+      if ((Array.isArray(clientesExistentes) ? clientesExistentes.length : 0) > 0) {
         return res.status(400).json({
           success: false,
           error: 'Já existe um cliente cadastrado com este telefone',
@@ -109,14 +104,11 @@ class ClienteController {
       res.status(201).json({
         success: true,
         data: novoCliente,
-        message: 'Cliente criado com sucesso',
+        message: 'Cliente cadastrado com sucesso',
       })
     } catch (error) {
-      console.error('Erro ao criar cliente:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Falha ao criar cliente')
     }
   }
 
@@ -139,7 +131,7 @@ class ClienteController {
       if (telefone !== clienteExistente.telefone) {
         const clientesComTelefone = await db.find('clientes', { telefone })
 
-        if (clientesComTelefone.length > 0) {
+        if ((Array.isArray(clientesComTelefone) ? clientesComTelefone.length : 0) > 0) {
           return res.status(400).json({
             success: false,
             error: 'Já existe outro cliente cadastrado com este telefone',
@@ -164,11 +156,8 @@ class ClienteController {
         message: 'Cliente atualizado com sucesso',
       })
     } catch (error) {
-      console.error('Erro ao atualizar cliente:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Falha ao atualizar cliente')
     }
   }
 
@@ -202,11 +191,8 @@ class ClienteController {
         message: 'Cliente excluído com sucesso',
       })
     } catch (error) {
-      console.error('Erro ao excluir cliente:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Falha ao excluir cliente')
     }
   }
 
@@ -248,11 +234,8 @@ class ClienteController {
         total: clientes.length,
       })
     } catch (error) {
-      console.error('Erro ao buscar clientes:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao buscar clientes')
     }
   }
 }

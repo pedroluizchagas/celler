@@ -65,11 +65,8 @@ class ProdutoController {
         total: produtosComAlertas.length,
       })
     } catch (error) {
-      LoggerManager.error('Erro ao listar produtos:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao listar produtos')
     }
   }
 
@@ -135,11 +132,8 @@ class ProdutoController {
         },
       })
     } catch (error) {
-      LoggerManager.error('Erro ao buscar produto:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao buscar produto')
     }
   }
 
@@ -770,11 +764,8 @@ class ProdutoController {
         },
       })
     } catch (error) {
-      LoggerManager.error('Erro ao movimentar estoque:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao movimentar estoque')
     }
   }
 
@@ -801,11 +792,8 @@ class ProdutoController {
         total: (alertas && alertas.length) || 0,
       })
     } catch (error) {
-      LoggerManager.error('Erro ao buscar alertas:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao buscar alertas')
     }
   }
 
@@ -828,11 +816,8 @@ class ProdutoController {
         message: 'Alerta resolvido com sucesso',
       })
     } catch (error) {
-      LoggerManager.error('Erro ao resolver alerta:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao resolver alerta')
     }
   }
 

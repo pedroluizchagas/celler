@@ -27,11 +27,8 @@ class CategoriaController {
         total: categorias.length,
       })
     } catch (error) {
-      LoggerManager.error('Erro ao listar categorias:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao listar categorias')
     }
   }
 
@@ -73,11 +70,8 @@ class CategoriaController {
         },
       })
     } catch (error) {
-      LoggerManager.error('Erro ao buscar categoria:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao buscar categoria')
     }
   }
 
@@ -123,11 +117,8 @@ class CategoriaController {
         data: novaCategoria,
       })
     } catch (error) {
-      LoggerManager.error('Erro ao criar categoria:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao criar categoria')
     }
   }
 
@@ -188,11 +179,8 @@ class CategoriaController {
         data: categoriaAtualizada,
       })
     } catch (error) {
-      LoggerManager.error('Erro ao atualizar categoria:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao atualizar categoria')
     }
   }
 
@@ -241,11 +229,8 @@ class CategoriaController {
         message: 'Categoria desativada com sucesso',
       })
     } catch (error) {
-      LoggerManager.error('Erro ao excluir categoria:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao excluir categoria')
     }
   }
 }

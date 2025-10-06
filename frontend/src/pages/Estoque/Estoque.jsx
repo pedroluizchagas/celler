@@ -127,10 +127,20 @@ const Estoque = () => {
       carregarDados() // Recarregar dados
     } catch (error) {
       console.error('Erro ao salvar produto:', error)
-      mostrarSnackbar(
-        'Erro ao salvar produto: ' + (error.message || 'Erro desconhecido'),
-        'error'
-      )
+
+      const message = error?.message || 'Erro ao salvar produto'
+      const detailsList = Array.isArray(error?.details)
+        ? error.details.map((detail) => {
+            const field = Array.isArray(detail.path) ? detail.path.join('.') : detail.path
+            return field ? `${field}: ${detail.message}` : detail.message
+          })
+        : []
+      const composed = detailsList.length
+        ? `${message} (${detailsList.join(', ')})`
+        : message
+
+      mostrarSnackbar(`Erro ao salvar produto: ${composed}`, 'error')
+      throw error
     }
   }
 

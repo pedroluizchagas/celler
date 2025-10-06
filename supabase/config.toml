@@ -1,0 +1,6 @@
+[project]
+ref = "siazsdgodjfmpenmukon" # extraído de SUPABASE_URL
+
+# A CLI pode popular outras seções (db, api, studio) ao rodar `supabase init`.
+# Mantemos apenas o `ref` para permitir `supabase db link`/`diff` no projeto atual.
+

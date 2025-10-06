@@ -50,45 +50,19 @@ router.get(
 )
 
 // Comparativo entradas vs saídas
+
 router.get('/relatorios/comparativo', async (req, res) => {
   try {
-    const { ano = new Date().getFullYear(), meses = 12 } = req.query
-
-    const dados = []
-
-    for (let i = 0; i < meses; i++) {
-      const data = new Date(ano, i, 1)
-      const mes = (data.getMonth() + 1).toString().padStart(2, '0')
-      const anoAtual = data.getFullYear()
-
-      const resumo = await financeiroController.db.get(`
-        SELECT 
-          SUM(CASE WHEN tipo = 'entrada' THEN valor ELSE 0 END) as entradas,
-          SUM(CASE WHEN tipo = 'saida' THEN valor ELSE 0 END) as saidas
-        FROM fluxo_caixa 
-        WHERE strftime('%Y-%m', data_movimentacao) = '${anoAtual}-${mes}'
-      `)
-
-      dados.push({
-        mes: `${mes}/${anoAtual}`,
-        entradas: resumo.entradas || 0,
-        saidas: resumo.saidas || 0,
-        saldo: (resumo.entradas || 0) - (resumo.saidas || 0),
-      })
-    }
-
-    res.json({
-      success: true,
-      data: dados,
-      periodo: `${ano} - Últimos ${meses} meses`,
-    })
+    const ano = parseInt(req.query.ano || new Date().getFullYear())
+    const meses = parseInt(req.query.meses || 12)
+    const dados = await financeiroController.db.rpc('finance_comparativo', { ano, meses })
+    return res.json({ success: true, data: dados, periodo: `${ano} - últimos ${meses} meses` })
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao gerar comparativo',
-    })
+    const { respondWithError } = require('../utils/http-error')
+    return respondWithError(res, error, 'Erro ao gerar comparativo')
   }
 })
+
 
 // ==================== UTILITÁRIOS ====================
 
@@ -99,119 +73,51 @@ router.post(
 )
 
 // Resumo rápido para widgets
+
 router.get('/resumo-rapido', async (req, res) => {
   try {
     const hoje = new Date().toISOString().split('T')[0]
     const inicioMes = new Date().toISOString().substr(0, 8) + '01'
-
-    // Saldo atual
-    const saldoAtual = await financeiroController.db.get(`
-      SELECT 
-        SUM(CASE WHEN tipo = 'entrada' THEN valor ELSE 0 END) - 
-        SUM(CASE WHEN tipo = 'saida' THEN valor ELSE 0 END) as saldo
-      FROM fluxo_caixa
-    `)
-
-    // Entradas do mês
-    const entradas = await financeiroController.db.get(
-      `
-      SELECT SUM(valor) as total, COUNT(*) as count
-      FROM fluxo_caixa 
-      WHERE tipo = 'entrada' AND data_movimentacao >= ?
-    `,
-      [inicioMes]
-    )
-
-    // Saídas do mês
-    const saidas = await financeiroController.db.get(
-      `
-      SELECT SUM(valor) as total, COUNT(*) as count
-      FROM fluxo_caixa 
-      WHERE tipo = 'saida' AND data_movimentacao >= ?
-    `,
-      [inicioMes]
-    )
-
-    // Contas vencendo hoje
-    const contasVencendoHoje = await financeiroController.db.all(
-      `
-      SELECT 'pagar' as tipo, COUNT(*) as count, SUM(valor) as total
-      FROM contas_pagar 
-      WHERE data_vencimento = ? AND status = 'pendente'
-      UNION ALL
-      SELECT 'receber' as tipo, COUNT(*) as count, SUM(valor) as total
-      FROM contas_receber 
-      WHERE data_vencimento = ? AND status = 'pendente'
-    `,
-      [hoje, hoje]
-    )
-
-    res.json({
+    const [resumoArr, vencendoHoje] = await Promise.all([
+      financeiroController.db.rpc('finance_resumo_rapido', { desde: inicioMes }),
+      financeiroController.db.rpc('finance_vencendo_hoje', { hoje }),
+    ])
+    const resumo = Array.isArray(resumoArr) ? (resumoArr[0] || {}) : (resumoArr || {})
+    return res.json({
       success: true,
       data: {
-        saldoAtual: saldoAtual.saldo || 0,
-        entradasMes: {
-          total: entradas.total || 0,
-          count: entradas.count || 0,
-        },
-        saidasMes: {
-          total: saidas.total || 0,
-          count: saidas.count || 0,
-        },
-        contasVencendoHoje,
+        saldoAtual: resumo.saldo_atual || 0,
+        entradasMes: { total: resumo.entradas_total || 0, count: resumo.entradas_count || 0 },
+        saidasMes: { total: resumo.saidas_total || 0, count: resumo.saidas_count || 0 },
+        contasVencendoHoje: Array.isArray(vencendoHoje) ? vencendoHoje : [],
       },
     })
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao carregar resumo rápido',
-    })
+    const { respondWithError } = require('../utils/http-error')
+    return respondWithError(res, error, 'Erro ao carregar resumo rápido')
   }
 })
+
 
 // Estatísticas por período
+
 router.get('/estatisticas', async (req, res) => {
   try {
-    const { periodo = 'mes' } = req.query // 'mes', 'trimestre', 'ano'
-
-    let groupBy
-    switch (periodo) {
-      case 'trimestre':
-        groupBy =
-          "strftime('%Y-Q', data_movimentacao, 'start of year', '+' || ((strftime('%m', data_movimentacao) - 1) / 3) || ' months')"
-        break
-      case 'ano':
-        groupBy = "strftime('%Y', data_movimentacao)"
-        break
-      default:
-        groupBy = "strftime('%Y-%m', data_movimentacao)"
-    }
-
-    const estatisticas = await financeiroController.db.all(`
-      SELECT 
-        ${groupBy} as periodo,
-        SUM(CASE WHEN tipo = 'entrada' THEN valor ELSE 0 END) as entradas,
-        SUM(CASE WHEN tipo = 'saida' THEN valor ELSE 0 END) as saidas,
-        COUNT(*) as total_movimentacoes
-      FROM fluxo_caixa 
-      GROUP BY ${groupBy}
-      ORDER BY periodo DESC
-      LIMIT 12
-    `)
-
-    res.json({
-      success: true,
-      data: estatisticas.map((stat) => ({
-        ...stat,
-        saldo: stat.entradas - stat.saidas,
-      })),
-    })
+    const periodo = (req.query.periodo || 'mes').toString()
+    const rows = await financeiroController.db.rpc('finance_estatisticas', { periodo, limit_val: 12 })
+    const data = (rows || []).map((r) => ({
+      periodo: r.periodo_label,
+      entradas: Number(r.entradas || 0),
+      saidas: Number(r.saidas || 0),
+      total_movimentacoes: Number(r.total_movimentacoes || 0),
+      saldo: Number(r.entradas || 0) - Number(r.saidas || 0),
+    }))
+    return res.json({ success: true, data })
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao carregar estatísticas',
-    })
+    const { respondWithError } = require('../utils/http-error')
+    return respondWithError(res, error, 'Erro ao carregar estatísticas')
   }
 })
+
 
 module.exports = router

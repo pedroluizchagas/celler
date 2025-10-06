@@ -75,11 +75,8 @@ class VendaController {
         },
       })
     } catch (error) {
-      LoggerManager.error('Erro ao listar vendas:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao listar vendas')
     }
   }
 
@@ -134,11 +131,8 @@ class VendaController {
         },
       })
     } catch (error) {
-      LoggerManager.error('Erro ao buscar venda:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao buscar venda')
     }
   }
 
@@ -378,11 +372,8 @@ class VendaController {
         data: novaVenda,
       })
     } catch (error) {
-      LoggerManager.error('Erro ao criar venda:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao criar venda')
     }
   }
 
@@ -572,11 +563,8 @@ class VendaController {
         },
       })
     } catch (error) {
-      LoggerManager.error('Erro ao gerar relatório de vendas:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao gerar relatório de vendas')
     }
   }
 
@@ -742,11 +730,8 @@ class VendaController {
         },
       })
     } catch (error) {
-      LoggerManager.error('Erro na migração de vendas para financeiro:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro na migração de vendas para financeiro')
     }
   }
 }

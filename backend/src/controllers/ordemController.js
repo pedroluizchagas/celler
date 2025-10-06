@@ -61,11 +61,8 @@ class OrdemController {
         total: ordens.length,
       })
     } catch (error) {
-      console.error('Erro ao listar ordens:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao listar ordens')
     }
   }
 
@@ -163,13 +160,10 @@ class OrdemController {
           historico,
         },
       })
-    } catch (error) {
-      console.error('Erro ao buscar ordem:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor: ' + error.message,
-      })
-    }
+      } catch (error) {
+        const { respondWithError } = require('../utils/http-error')
+        return respondWithError(res, error, 'Erro ao buscar ordem')
+      }
   }
 
   // Criar nova ordem
@@ -729,80 +723,31 @@ class OrdemController {
   // Estatísticas do dashboard
   async stats(req, res) {
     try {
-      // Total de ordens
-      const totalOrdens = await db.count('ordens')
+      const fmt = (d) => d.toISOString().slice(0, 10)
+      const now = new Date()
+      const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1)
 
-      // Total de clientes
-      const totalClientes = await db.count('clientes')
+      const [totalOrdens, totalClientes, resumoMesArr, resumoDiaArr, prioridadeMesArr, ordensRecentes, tecnicosAtivos] = await Promise.all([
+        db.count('ordens'),
+        db.count('clientes'),
+        db.rpc('dashboard_resumo_mes', { desde: fmt(inicioMes) }),
+        db.rpc('dashboard_resumo_do_dia', { data: fmt(now) }),
+        db.rpc('dashboard_prioridade_mes', { desde: fmt(inicioMes) }),
+        db.rpc('dashboard_ordens_recentes', { lim: 10 }),
+        db.rpc('dashboard_tecnicos_ativos', { desde: fmt(inicioMes), lim: 5 }),
+      ])
 
-      // Buscar todas as ordens para calcular estatísticas
-      const todasOrdens = await db.all('ordens')
-      
-      // Calcular estatísticas básicas
-      const ordemsPorStatus = {}
-      const ordemsPorPrioridade = {}
-      let faturamentoTotal = 0
-      let faturamentoEntregue = 0
-      let faturamentoPendente = 0
+      const resumoMes = Array.isArray(resumoMesArr) ? (resumoMesArr[0] || {}) : (resumoMesArr || {})
+      const statusArray = [
+        { status: 'aguardando', total: resumoMes.aguardando || 0 },
+        { status: 'em_andamento', total: resumoMes.em_andamento || 0 },
+        { status: 'aguardando_peca', total: resumoMes.aguardando_peca || 0 },
+        { status: 'pronto', total: resumoMes.pronto || 0 },
+        { status: 'entregue', total: resumoMes.entregue || 0 },
+        { status: 'cancelado', total: resumoMes.cancelado || 0 },
+      ]
 
-      todasOrdens.forEach(ordem => {
-        // Contar por status
-        ordemsPorStatus[ordem.status] = (ordemsPorStatus[ordem.status] || 0) + 1
-        
-        // Contar por prioridade
-        ordemsPorPrioridade[ordem.prioridade] = (ordemsPorPrioridade[ordem.prioridade] || 0) + 1
-        
-        // Calcular faturamento
-        const valor = parseFloat(ordem.valor_final) || 0
-        faturamentoTotal += valor
-        
-        if (ordem.status === 'entregue') {
-          faturamentoEntregue += valor
-        } else if (['aguardando', 'em_andamento', 'aguardando_peca', 'pronto'].includes(ordem.status)) {
-          faturamentoPendente += valor
-        }
-      })
-
-      // Converter objetos para arrays
-      const statusArray = Object.entries(ordemsPorStatus).map(([status, total]) => ({ status, total }))
-      const prioridadeArray = Object.entries(ordemsPorPrioridade).map(([prioridade, total]) => ({ prioridade, total }))
-
-      // Ordens recentes (últimas 10) - buscar com join manual
-      const ordensRecentesRaw = await db.query('SELECT * FROM ordens ORDER BY data_entrada DESC LIMIT 10')
-      const ordensRecentes = []
-      
-      for (const ordem of ordensRecentesRaw) {
-        const cliente = await db.get('clientes', ordem.cliente_id)
-        ordensRecentes.push({
-          id: ordem.id,
-          dispositivo: ordem.equipamento,
-          defeito: ordem.defeito_relatado,
-          status: ordem.status,
-          prioridade: ordem.prioridade,
-          data_criacao: ordem.data_entrada,
-          valor_final: ordem.valor_final,
-          cliente_nome: cliente ? cliente.nome : 'Cliente não encontrado'
-        })
-      }
-
-      // Técnicos mais ativos
-      const tecnicosMap = {}
-      todasOrdens.forEach(ordem => {
-        if (ordem.tecnico_responsavel && ordem.tecnico_responsavel.trim() !== '') {
-          const tecnico = ordem.tecnico_responsavel
-          if (!tecnicosMap[tecnico]) {
-            tecnicosMap[tecnico] = { tecnico, total_ordens: 0, concluidas: 0 }
-          }
-          tecnicosMap[tecnico].total_ordens++
-          if (ordem.status === 'entregue') {
-            tecnicosMap[tecnico].concluidas++
-          }
-        }
-      })
-      
-      const tecnicosAtivos = Object.values(tecnicosMap)
-        .sort((a, b) => b.total_ordens - a.total_ordens)
-        .slice(0, 5)
+      const prioridadeArray = Array.isArray(prioridadeMesArr) ? prioridadeMesArr.map((r) => ({ prioridade: r.prioridade, total: r.total })) : []
 
       res.json({
         success: true,
@@ -810,24 +755,22 @@ class OrdemController {
           totais: {
             ordens: totalOrdens || 0,
             clientes: totalClientes || 0,
-            faturamento: faturamentoTotal,
-            faturamento_entregue: faturamentoEntregue,
-            faturamento_pendente: faturamentoPendente,
+            faturamento: resumoMes.valor_total || 0,
+            faturamento_entregue: resumoMes.valor_entregue || 0,
+            faturamento_pendente: resumoMes.valor_pendente || 0,
+            resumo_dia: Array.isArray(resumoDiaArr) ? (resumoDiaArr[0] || null) : (resumoDiaArr || null),
           },
           breakdown: {
             status: statusArray,
             prioridade: prioridadeArray,
           },
-          ordensRecentes: ordensRecentes,
-          tecnicosAtivos: tecnicosAtivos,
+          ordensRecentes: Array.isArray(ordensRecentes) ? ordensRecentes : [],
+          tecnicosAtivos: Array.isArray(tecnicosAtivos) ? tecnicosAtivos : [],
         },
       })
     } catch (error) {
-      console.error('Erro ao buscar estatísticas:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao buscar estatísticas')
     }
   }
 
@@ -874,11 +817,8 @@ class OrdemController {
         data: fotosInseridas,
       })
     } catch (error) {
-      console.error('Erro ao fazer upload de fotos:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao fazer upload de fotos')
     }
   }
 

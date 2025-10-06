@@ -10,11 +10,25 @@ const api = axios.create({
 // Interceptor para requests
 api.interceptors.request.use(
   (config) => {
-    console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`)
-    
-    // NÃO definir Origin manualmente - o navegador faz isso automaticamente
-    // NÃO sobrescrever Cache-Control - deixar o navegador gerenciar
-    
+    const method = (config.method || '').toLowerCase()
+    if (method) {
+      console.log(`[REQ] ${method.toUpperCase()} ${config.url}`)
+    }
+
+    const hasPayload = ['post', 'put', 'patch', 'delete'].includes(method)
+    const isFormData = typeof FormData !== 'undefined' && config.data instanceof FormData
+
+    if (hasPayload && config.data && !isFormData) {
+      config.headers = config.headers || {}
+      if (!config.headers['Content-Type']) {
+        config.headers['Content-Type'] = 'application/json'
+      }
+    }
+
+    if (config.headers && 'Origin' in config.headers) {
+      delete config.headers.Origin
+    }
+
     return config
   },
   (error) => {

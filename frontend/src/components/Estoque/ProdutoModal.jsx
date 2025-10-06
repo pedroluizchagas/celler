@@ -197,26 +197,64 @@ const ProdutoModal = ({ open, produto, modo = 'criar', onClose, onSave }) => {
     return Object.keys(newErrors).length === 0
   }
 
+  const toNumber = (value, fallback = 0) => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+
+  const toNullableNumber = (value) => {
+    if (value === undefined || value === null || value === '') {
+      return null
+    }
+
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
   const handleSave = async () => {
     if (!validateForm()) return
 
+    setErrors({})
     setLoading(true)
     try {
       await onSave({
         ...formData,
-        preco_custo: parseFloat(formData.preco_custo) || 0,
-        preco_venda: parseFloat(formData.preco_venda) || 0,
-        margem_lucro: parseFloat(formData.margem_lucro) || 0,
-        estoque_atual: parseInt(formData.estoque_atual) || 0,
-        estoque_minimo: parseInt(formData.estoque_minimo) || 5,
-        estoque_maximo: parseInt(formData.estoque_maximo) || 100,
+        preco_custo: toNumber(formData.preco_custo),
+        preco_venda: toNumber(formData.preco_venda),
+        margem_lucro: toNumber(formData.margem_lucro),
+        estoque_atual: toNumber(formData.estoque_atual),
+        estoque_minimo: toNumber(formData.estoque_minimo),
+        estoque_maximo: toNumber(formData.estoque_maximo),
+        categoria_id: toNullableNumber(formData.categoria_id),
+        fornecedor_id: toNullableNumber(formData.fornecedor_id),
       })
     } catch (error) {
-      console.error('Erro ao salvar produto:', error)
+      console.error('Erro ao salvar produto (modal):', error)
+
+      const serverErrors = {}
+
+      if (Array.isArray(error?.details)) {
+        error.details.forEach((detail) => {
+          const path = Array.isArray(detail.path) ? detail.path[0] : detail.path
+          const key = typeof path === 'string' ? path.split('.')[0] : ''
+          if (key) {
+            serverErrors[key] = detail.message
+          }
+        })
+      }
+
+      if (error?.message) {
+        serverErrors._form = error.message
+      }
+
+      if (Object.keys(serverErrors).length) {
+        setErrors((prev) => ({ ...prev, ...serverErrors }))
+      }
     } finally {
       setLoading(false)
     }
   }
+
 
   const isReadOnly = modo === 'visualizar'
   const title = {
@@ -249,6 +287,11 @@ const ProdutoModal = ({ open, produto, modo = 'criar', onClose, onSave }) => {
 
       <DialogContent dividers>
         <Grid container spacing={3}>
+          {errors._form && (
+            <Grid item xs={12}>
+              <Alert severity="error">{errors._form}</Alert>
+            </Grid>
+          )}
           {/* Informações Básicas */}
           <Grid item xs={12}>
             <Typography variant="h6" gutterBottom color="primary">

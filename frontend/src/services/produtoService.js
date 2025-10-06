@@ -1,7 +1,59 @@
 import api from './api'
 
+const toNullableString = (value) => {
+  if (value === undefined || value === null) {
+    return null
+  }
+
+  const normalized = String(value).trim()
+  return normalized.length ? normalized : null
+}
+
+const toNumberOrZero = (value) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const toNumberOrNull = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return null
+  }
+
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const buildProdutoPayload = (dados) => ({
+  nome: (dados.nome || '').trim(),
+  tipo: dados.tipo === 'servico' ? 'servico' : 'peca',
+  preco_custo: toNumberOrZero(dados.preco_custo),
+  preco_venda: toNumberOrZero(dados.preco_venda),
+  margem_lucro: toNumberOrZero(dados.margem_lucro),
+  estoque_atual: toNumberOrZero(dados.estoque_atual),
+  estoque_minimo: toNumberOrZero(dados.estoque_minimo),
+  estoque_maximo: toNumberOrZero(dados.estoque_maximo),
+  categoria_id: toNumberOrNull(dados.categoria_id),
+  fornecedor_id: toNumberOrNull(dados.fornecedor_id),
+  descricao: toNullableString(dados.descricao),
+  codigo_barras: toNullableString(dados.codigo_barras),
+  codigo_interno: toNullableString(dados.codigo_interno),
+  localizacao: toNullableString(dados.localizacao),
+  ativo: typeof dados.ativo === 'boolean' ? dados.ativo : true,
+})
+
+const extractApiError = (error, fallbackMessage = 'Falha ao salvar') => {
+  const responseData = error?.response?.data || {}
+  const message = responseData.message || fallbackMessage
+  const details = Array.isArray(responseData.details) ? responseData.details : undefined
+
+  const enrich = new Error(message)
+  if (details) {
+    enrich.details = details
+  }
+  return enrich
+}
+
 const produtoService = {
-  // Listar produtos
   async listar(filtros = {}) {
     const params = new URLSearchParams()
 
@@ -14,36 +66,40 @@ const produtoService = {
     return response.data?.data || response.data || []
   },
 
-  // Compatibilidade
   async buscarTodos(filtros = {}) {
     return this.listar(filtros)
   },
 
-  // Buscar produto por ID
   async buscarPorId(id) {
     const response = await api.get(`/produtos/${id}`)
     return response.data
   },
 
-  // Buscar produto por código
   async buscarPorCodigo(codigo) {
     const response = await api.get(`/produtos/codigo/${codigo}`)
     return response.data
   },
 
-  // Criar produto
   async criar(dadosProduto) {
-    const response = await api.post('/produtos', dadosProduto)
-    return response.data?.data || response.data
+    try {
+      const payload = buildProdutoPayload(dadosProduto)
+      const response = await api.post('/produtos', payload)
+      return response.data?.data || response.data
+    } catch (error) {
+      throw extractApiError(error, 'Falha ao cadastrar produto')
+    }
   },
 
-  // Atualizar produto
   async atualizar(id, dadosProduto) {
-    const response = await api.put(`/produtos/${id}`, dadosProduto)
-    return response.data?.data || response.data
+    try {
+      const payload = buildProdutoPayload(dadosProduto)
+      const response = await api.put(`/produtos/${id}`, payload)
+      return response.data?.data || response.data
+    } catch (error) {
+      throw extractApiError(error, 'Falha ao atualizar produto')
+    }
   },
 
-  // Movimentar estoque
   async movimentarEstoque(id, dadosMovimentacao) {
     const response = await api.post(
       `/produtos/${id}/movimentar`,
@@ -52,30 +108,25 @@ const produtoService = {
     return response.data
   },
 
-  // Listar categorias
   async listarCategorias() {
     const response = await api.get('/categorias')
     return response.data?.data || response.data || []
   },
 
-  // Listar alertas
   async listarAlertas() {
     const response = await api.get('/produtos/alertas')
     return response.data?.data || response.data || []
   },
 
-  // Buscar alertas (compatibilidade)
   async buscarAlertas() {
     return this.listarAlertas()
   },
 
-  // Resolver alerta
   async resolverAlerta(alertaId) {
     const response = await api.put(`/produtos/alertas/${alertaId}/resolver`)
     return response.data
   },
 
-  // Buscar estatísticas do estoque
   async buscarEstatisticas() {
     const response = await api.get('/produtos/stats')
     return response.data?.data || response.data

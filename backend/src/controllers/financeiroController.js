@@ -89,11 +89,8 @@ class FinanceiroController {
         },
       })
     } catch (error) {
-      LoggerManager.error('Erro ao listar fluxo de caixa', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao listar fluxo de caixa')
     }
   }
 
@@ -180,11 +177,8 @@ class FinanceiroController {
         },
       })
     } catch (error) {
-      LoggerManager.error('Erro ao buscar resumo do fluxo de caixa', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao buscar resumo do fluxo de caixa')
     }
   }
 
@@ -1222,11 +1216,8 @@ class FinanceiroController {
         gerado_em: new Date().toISOString(),
       })
     } catch (error) {
-      LoggerManager.error('Erro ao exportar fluxo de caixa', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao exportar fluxo de caixa')
     }
   }
 
@@ -1270,11 +1261,8 @@ class FinanceiroController {
         contas_receber: contasReceberVencidas.changes || 0,
       })
     } catch (error) {
-      LoggerManager.error('Erro ao atualizar status das contas', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao atualizar status das contas')
     }
   }
 }

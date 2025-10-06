@@ -2,8 +2,19 @@
 // Este arquivo garante que a URL correta seja sempre usada
 
 const getApiUrl = () => {
+  // Detectar se está em produção de forma mais robusta
+  const isProduction = 
+    typeof window !== 'undefined' && (
+      window.location.hostname.includes('vercel.app') ||
+      window.location.hostname.includes('netlify.app') ||
+      window.location.hostname !== 'localhost' && 
+      window.location.hostname !== '127.0.0.1' &&
+      !window.location.hostname.includes('localhost')
+    )
+  
   // Em produção, sempre usar a URL do Render
-  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+  if (isProduction) {
+    console.log('🌐 Ambiente de produção detectado, usando URL do Render')
     return 'https://assistencia-tecnica-1k5g.onrender.com/api'
   }
   
@@ -22,7 +33,7 @@ const getApiUrl = () => {
   }
   
   // Fallback para desenvolvimento
-  console.log('🎯 Usando fallback localhost para desenvolvimento')
+  console.log('🎯 Ambiente de desenvolvimento, usando localhost')
   return 'http://localhost:3001/api'
 }
 

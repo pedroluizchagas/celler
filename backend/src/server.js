@@ -52,6 +52,7 @@ async function initializeWhatsApp() {
   console.log('🔄 Iniciando WhatsApp service de forma assíncrona...')
 
   try {
+    // Verificar se os módulos existem antes de tentar carregá-los
     const WhatsAppService = require('./services/whatsappService')
     const WhatsAppController = require('./controllers/whatsappController')
     
@@ -61,16 +62,22 @@ async function initializeWhatsApp() {
     console.log('🔧 WhatsApp Controller instanciado:', !!whatsappController)
     console.log('🔧 Método getQRCode disponível:', typeof whatsappController.getQRCode)
     
-    // Tentar inicializar o service
-    await whatsappService.start()
+    // Tentar inicializar o service com timeout
+    const initPromise = whatsappService.start()
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Timeout na inicialização do WhatsApp')), 30000)
+    )
+    
+    await Promise.race([initPromise, timeoutPromise])
     whatsappInitialized = true
     console.log('✅ WhatsApp service inicializado com sucesso!')
     
   } catch (error) {
     console.warn('⚠️ WhatsApp service falhou na inicialização:', error.message)
-    console.log('📱 Sistema funcionará sem WhatsApp')
+    console.log('📱 Sistema funcionará sem WhatsApp - isso não afeta outras funcionalidades')
     whatsappService = null
     whatsappController = null
+    whatsappInitialized = false
   } finally {
     whatsappInitializing = false
   }
@@ -85,7 +92,7 @@ if (whatsappEnabled) {
 // Middlewares
 app.use(helmet())
 
-// Configuração CORS mais robusta
+// Configuração CORS mais robusta e permissiva para produção
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [
@@ -100,18 +107,27 @@ const corsOptions = {
       'https://assistencia-tecnica-saytech.vercel.app',
     ]
     
-    // Permitir requisições sem origin (ex: Postman, curl)
-    if (!origin) return callback(null, true)
+    // Permitir requisições sem origin (ex: Postman, curl, mobile apps)
+    if (!origin) {
+      console.log('✅ CORS: Permitindo requisição sem origin')
+      return callback(null, true)
+    }
     
-    // Verificar se é um domínio Vercel
-    if (origin.match(/^https:\/\/.*\.vercel\.app$/)) {
-      console.log('✅ CORS: Permitindo domínio Vercel:', origin)
+    // Em produção, ser mais permissivo com domínios Vercel
+    if (isProduction && origin.match(/^https:\/\/.*\.vercel\.app$/)) {
+      console.log('✅ CORS: Permitindo domínio Vercel em produção:', origin)
       return callback(null, true)
     }
     
     // Verificar lista de origens permitidas
     if (allowedOrigins.includes(origin)) {
-      console.log('✅ CORS: Permitindo origem:', origin)
+      console.log('✅ CORS: Permitindo origem conhecida:', origin)
+      return callback(null, true)
+    }
+    
+    // Em desenvolvimento, ser mais permissivo
+    if (!isProduction) {
+      console.log('✅ CORS: Permitindo origem em desenvolvimento:', origin)
       return callback(null, true)
     }
     
@@ -119,13 +135,37 @@ const corsOptions = {
     callback(new Error('Não permitido pelo CORS'))
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Origin', 'Accept'],
-  exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar'],
-  optionsSuccessStatus: 200 // Para suportar navegadores legados
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With', 
+    'Origin', 
+    'Accept',
+    'Access-Control-Allow-Origin',
+    'Access-Control-Allow-Headers',
+    'Access-Control-Allow-Methods'
+  ],
+  exposedHeaders: ['Content-Length', 'X-Total-Count'],
+  optionsSuccessStatus: 200,
+  preflightContinue: false
 }
 
 app.use(cors(corsOptions))
+
+// Middleware para adicionar headers CORS manualmente como fallback
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*')
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH')
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With, Origin, Accept')
+  res.header('Access-Control-Allow-Credentials', 'true')
+  
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200)
+  } else {
+    next()
+  }
+})
 
 // Sistema de logs
 app.use(requestLogger)
@@ -136,14 +176,38 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 // Pasta de uploads
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
 
-// Rota de teste
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    message: 'Sistema de Assistência Técnica - API funcionando!',
-    timestamp: new Date().toISOString(),
-    database: 'Connected',
-  })
+// Health check endpoint melhorado
+app.get('/api/health', async (req, res) => {
+  try {
+    const healthStatus = {
+      status: 'OK',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment: process.env.NODE_ENV || 'development',
+      version: '1.0.0',
+      services: {
+        database: 'checking...',
+        whatsapp: whatsappEnabled ? (whatsappInitialized ? 'ready' : 'initializing') : 'disabled'
+      }
+    }
+
+    // Verificar conexão com banco de dados
+    try {
+      await db.query('SELECT 1 as test')
+      healthStatus.services.database = 'connected'
+    } catch (dbError) {
+      healthStatus.services.database = 'error'
+      healthStatus.status = 'DEGRADED'
+    }
+
+    res.json(healthStatus)
+  } catch (error) {
+    res.status(500).json({
+      status: 'ERROR',
+      timestamp: new Date().toISOString(),
+      error: error.message
+    })
+  }
 })
 
 // Rotas principais
@@ -156,30 +220,47 @@ app.use('/api/vendas', vendasRoutes)
 app.use('/api/financeiro', financeiroRoutes)
 
 // Configurar rotas do WhatsApp condicionalmente
-// Middleware para verificar e inicializar WhatsApp sob demanda
+// Middleware para garantir que WhatsApp está inicializado
 async function ensureWhatsAppInitialized(req, res, next) {
   if (!whatsappEnabled) {
     return res.status(503).json({
-      error: 'WhatsApp service desabilitado',
-      message: 'O serviço WhatsApp está desabilitado na configuração'
+      success: false,
+      error: 'WhatsApp não está habilitado neste servidor',
+      code: 'WHATSAPP_DISABLED'
     })
   }
 
   if (whatsappInitializing) {
     return res.status(503).json({
-      error: 'WhatsApp service inicializando',
-      message: 'O serviço WhatsApp está sendo inicializado. Tente novamente em alguns segundos.'
+      success: false,
+      error: 'WhatsApp ainda está inicializando. Tente novamente em alguns segundos.',
+      code: 'WHATSAPP_INITIALIZING'
     })
   }
 
-  if (!whatsappInitialized || !whatsappController) {
-    // Tentar inicializar
-    await initializeWhatsApp()
-    
-    if (!whatsappController) {
+  if (!whatsappInitialized || !whatsappService || !whatsappController) {
+    // Tentar inicializar novamente apenas se não estiver em processo
+    if (!whatsappInitializing) {
+      try {
+        console.log('🔄 Tentando reinicializar WhatsApp...')
+        await initializeWhatsApp()
+        if (!whatsappInitialized) {
+          throw new Error('Falha na reinicialização')
+        }
+      } catch (error) {
+        console.warn('⚠️ Falha na reinicialização do WhatsApp:', error.message)
+        return res.status(503).json({
+          success: false,
+          error: 'WhatsApp service não está disponível no momento',
+          code: 'WHATSAPP_UNAVAILABLE',
+          details: error.message
+        })
+      }
+    } else {
       return res.status(503).json({
-        error: 'WhatsApp service não disponível',
-        message: 'O serviço WhatsApp não pôde ser inicializado'
+        success: false,
+        error: 'WhatsApp está sendo reinicializado. Tente novamente em alguns segundos.',
+        code: 'WHATSAPP_REINITIALIZING'
       })
     }
   }
@@ -295,43 +376,89 @@ process.on('SIGINT', async () => {
 
 // Função para inicializar tudo de forma ordenada
 async function inicializarSistema() {
+  LoggerManager.info('🚀 Inicializando sistema...')
+  
+  const initResults = {
+    database: false,
+    whatsapp: false,
+    backup: false,
+    migration: false
+  }
+  
+  // 1. Verificar conexão com banco de dados
   try {
-    // 1. Inicializar sistema de backup automático
+    LoggerManager.info('🔍 Verificando conexão com banco de dados...')
+    await db.query('SELECT 1 as test')
+    LoggerManager.info('✅ Banco de dados conectado!')
+    initResults.database = true
+  } catch (error) {
+    LoggerManager.error('❌ Erro na conexão com banco de dados:', error.message)
+    LoggerManager.warn('⚠️ Sistema funcionará com limitações no banco de dados')
+  }
+  
+  // 2. Inicializar sistema de backup automático
+  try {
+    LoggerManager.info('💾 Inicializando sistema de backup...')
     backupManager.agendarBackups()
+    LoggerManager.info('✅ Sistema de backup inicializado!')
+    initResults.backup = true
+  } catch (error) {
+    LoggerManager.warn('⚠️ Sistema de backup não pôde ser inicializado:', error.message)
+    LoggerManager.info('💾 Backups não estarão disponíveis')
+  }
 
-    // 2. Aguardar que o banco esteja completamente pronto
-    LoggerManager.info('⏳ Aguardando inicialização completa do banco...')
-    await new Promise((resolve) => setTimeout(resolve, 3000)) // Aguarda 3 segundos
-
-    // 3. Verificar se as tabelas WhatsApp existem
+  // 3. Aguardar que o banco esteja completamente pronto (apenas se conectado)
+  if (initResults.database) {
     try {
+      LoggerManager.info('⏳ Aguardando inicialização completa do banco...')
+      await new Promise((resolve) => setTimeout(resolve, 3000)) // Aguarda 3 segundos
+
+      // Verificar se as tabelas WhatsApp existem
       await db.get('SELECT COUNT(*) FROM whatsapp_settings')
       LoggerManager.info('✅ Tabelas WhatsApp verificadas e prontas')
-    } catch (error) {
-      LoggerManager.error('❌ Erro ao verificar tabelas WhatsApp:', error)
-      return
-    }
-
-    // 4. Executar migração de números de telefone
-    try {
-      LoggerManager.info('🔄 Verificando necessidade de migração de números...')
-      const migrationResult = await migratePhoneNumbers()
-      if (migrationResult.success && migrationResult.migratedCount > 0) {
-        LoggerManager.info(
-          `✅ Migração concluída: ${migrationResult.migratedCount} mensagens normalizadas`
+      
+      // 4. Executar migração de números de telefone
+      try {
+        LoggerManager.info('🔄 Verificando necessidade de migração de números...')
+        const migrationResult = await migratePhoneNumbers()
+        if (migrationResult.success && migrationResult.migratedCount > 0) {
+          LoggerManager.info(
+            `✅ Migração concluída: ${migrationResult.migratedCount} mensagens normalizadas`
+          )
+        }
+        initResults.migration = true
+      } catch (error) {
+        LoggerManager.error(
+          '❌ Erro na migração de números (continuando):',
+          error
         )
       }
     } catch (error) {
-      LoggerManager.error(
-        '❌ Erro na migração de números (continuando):',
-        error
-      )
+      LoggerManager.error('❌ Erro ao verificar tabelas WhatsApp:', error)
+      LoggerManager.warn('⚠️ Funcionalidades WhatsApp podem não funcionar corretamente')
     }
+  }
 
-    // 5. WhatsApp será inicializado sob demanda quando necessário
+  // 5. WhatsApp será inicializado sob demanda quando necessário
+  if (whatsappEnabled) {
     LoggerManager.info('📱 WhatsApp configurado para inicialização sob demanda')
-  } catch (error) {
-    LoggerManager.error('❌ Erro ao inicializar sistema:', error)
+    initResults.whatsapp = 'on-demand'
+  } else {
+    LoggerManager.info('📱 WhatsApp desabilitado')
+    initResults.whatsapp = 'disabled'
+  }
+  
+  // Relatório de inicialização
+  LoggerManager.info('📊 Relatório de inicialização:')
+  LoggerManager.info(`   Database: ${initResults.database ? '✅' : '❌'}`)
+  LoggerManager.info(`   WhatsApp: ${initResults.whatsapp === 'disabled' ? '⏸️' : (initResults.whatsapp === 'on-demand' ? '🔄' : '❌')}`)
+  LoggerManager.info(`   Backup: ${initResults.backup ? '✅' : '❌'}`)
+  LoggerManager.info(`   Migration: ${initResults.migration ? '✅' : '❌'}`)
+  
+  if (initResults.database) {
+    LoggerManager.info('🎉 Sistema inicializado com sucesso!')
+  } else {
+    LoggerManager.warn('⚠️ Sistema iniciado com limitações - problemas no banco de dados')
   }
 }
 

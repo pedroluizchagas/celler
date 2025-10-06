@@ -37,80 +37,62 @@ console.log('📱 WhatsApp removido do sistema - funcionalidades desabilitadas p
 // Middlewares
 app.use(helmet())
 
-// Configuração CORS mais robusta e permissiva para produção
+// Configuração CORS padronizada
+const PROD_ORIGIN = process.env.FRONTEND_URL || "https://assistencia-tecnica-mu.vercel.app"
+
+// Permitir *.vercel.app (pré-visualizações)
+const vercelPreviewRegex = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i
+
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://localhost:8080',
-      'http://localhost:49242',
-      'http://localhost:51740',
-      'http://127.0.0.1:5173',
-      'https://assistencia-tecnica-mu.vercel.app',
-      'https://assistencia-tecnica-frontend.vercel.app',
-      'https://assistencia-tecnica-saytech.vercel.app',
-    ]
-    
-    // Permitir requisições sem origin (ex: Postman, curl, mobile apps)
+    // Requests sem origin (ex: curl, apps nativas)
     if (!origin) {
       console.log('✅ CORS: Permitindo requisição sem origin')
       return callback(null, true)
     }
-    
-    // Em produção, ser mais permissivo com domínios Vercel
-    if (isProduction && origin.match(/^https:\/\/.*\.vercel\.app$/)) {
-      console.log('✅ CORS: Permitindo domínio Vercel em produção:', origin)
-      return callback(null, true)
-    }
-    
-    // Verificar lista de origens permitidas
-    if (allowedOrigins.includes(origin)) {
-      console.log('✅ CORS: Permitindo origem conhecida:', origin)
-      return callback(null, true)
-    }
-    
-    // Em desenvolvimento, ser mais permissivo
-    if (!isProduction) {
-      console.log('✅ CORS: Permitindo origem em desenvolvimento:', origin)
+
+    const allowed = 
+      origin === PROD_ORIGIN || 
+      vercelPreviewRegex.test(origin) ||
+      // Permitir localhost em desenvolvimento
+      origin.startsWith('http://localhost:') ||
+      origin.startsWith('http://127.0.0.1:')
+
+    if (allowed) {
+      console.log('✅ CORS: Permitindo origem:', origin)
       return callback(null, true)
     }
     
     console.log('❌ CORS: Bloqueando origem:', origin)
-    callback(new Error('Não permitido pelo CORS'))
+    return callback(new Error("Not allowed by CORS: " + origin))
   },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
-    'X-Requested-With', 
-    'Origin', 
-    'Accept',
-    'Access-Control-Allow-Origin',
-    'Access-Control-Allow-Headers',
-    'Access-Control-Allow-Methods'
+    "Content-Type",
+    "Authorization", 
+    "Cache-Control",
+    "X-Requested-With",
+    "Accept",
+    "Origin"
   ],
-  exposedHeaders: ['Content-Length', 'X-Total-Count'],
-  optionsSuccessStatus: 200,
-  preflightContinue: false
+  exposedHeaders: [
+    "Content-Length",
+    "X-Total-Count"
+  ],
+  credentials: true,
+  maxAge: 86400 // 24h
 }
+
+// CORS antes de tudo
+app.use((req, res, next) => {
+  res.setHeader("Vary", "Origin") // importante p/ cache
+  next()
+})
 
 app.use(cors(corsOptions))
 
-// Middleware para adicionar headers CORS manualmente como fallback
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*')
-  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH')
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With, Origin, Accept')
-  res.header('Access-Control-Allow-Credentials', 'true')
-  
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200)
-  } else {
-    next()
-  }
-})
+// Responder preflight imediatamente
+app.options("*", cors(corsOptions))
 
 // Sistema de logs
 app.use(requestLogger)

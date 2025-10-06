@@ -4,13 +4,7 @@ import { API_CONFIG } from '../config/api.config.js'
 // Configuração base da API usando configuração centralizada
 const api = axios.create({
   ...API_CONFIG,
-  // Configurações adicionais para melhor compatibilidade
-  withCredentials: false, // Desabilitar cookies para evitar problemas de CORS
-  headers: {
-    ...API_CONFIG.headers,
-    'Accept': 'application/json',
-    'Cache-Control': 'no-cache',
-  }
+  withCredentials: true // mantenha true se seu backend usa cookies/sessão
 })
 
 // Interceptor para requests
@@ -18,12 +12,8 @@ api.interceptors.request.use(
   (config) => {
     console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`)
     
-    // Adicionar headers específicos para cada requisição
-    config.headers = {
-      ...config.headers,
-      'X-Requested-With': 'XMLHttpRequest',
-      'Origin': window.location.origin,
-    }
+    // NÃO definir Origin manualmente - o navegador faz isso automaticamente
+    // NÃO sobrescrever Cache-Control - deixar o navegador gerenciar
     
     return config
   },

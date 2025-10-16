@@ -2,15 +2,17 @@ const db = require('../utils/database-adapter')
 const { LoggerManager } = require('../utils/logger')
 
 class VendaController {
-  // Listar todas as vendas
+  // Listar todas as vendas com paginação determinística
   async index(req, res) {
     try {
       const { data_inicio, data_fim, cliente_id } = req.query
-      const page = parseInt(req.query.page) || 1
-      const limit = parseInt(req.query.limit) || 20
-      const offset = (page - 1) * limit
+      const { extractPaginationParams, createPaginatedResponse } = require('../utils/pagination')
 
-      let sql = `
+      // Extrair parâmetros de paginação
+      const pagination = extractPaginationParams(req.query, { defaultLimit: 20, maxLimit: 100 })
+
+      // Query base para dados
+      let baseQuery = `
         SELECT 
           v.*,
           c.nome as cliente_nome,
@@ -21,59 +23,49 @@ class VendaController {
         LEFT JOIN venda_itens vi ON v.id = vi.venda_id
         WHERE 1=1
       `
+
+      // Query para contagem
+      let countQuery = 'SELECT COUNT(*) as total FROM vendas v WHERE 1=1'
+      
       const params = []
-
-      if (data_inicio) {
-        sql += ' AND DATE(v.data_venda) >= ?'
-        params.push(data_inicio)
-      }
-
-      if (data_fim) {
-        sql += ' AND DATE(v.data_venda) <= ?'
-        params.push(data_fim)
-      }
-
-      if (cliente_id) {
-        sql += ' AND v.cliente_id = ?'
-        params.push(cliente_id)
-      }
-
-      sql += ' GROUP BY v.id ORDER BY v.data_venda DESC LIMIT ? OFFSET ?'
-      params.push(limit, offset)
-
-      const vendas = await db.all(sql, params)
-
-      // Contar total para paginação
-      let countSql = 'SELECT COUNT(*) as total FROM vendas v WHERE 1=1'
       const countParams = []
 
+      // Aplicar filtros
       if (data_inicio) {
-        countSql += ' AND DATE(v.data_venda) >= ?'
+        baseQuery += ' AND DATE(v.data_venda) >= ?'
+        countQuery += ' AND DATE(v.data_venda) >= ?'
+        params.push(data_inicio)
         countParams.push(data_inicio)
       }
 
       if (data_fim) {
-        countSql += ' AND DATE(v.data_venda) <= ?'
+        baseQuery += ' AND DATE(v.data_venda) <= ?'
+        countQuery += ' AND DATE(v.data_venda) <= ?'
+        params.push(data_fim)
         countParams.push(data_fim)
       }
 
       if (cliente_id) {
-        countSql += ' AND v.cliente_id = ?'
+        baseQuery += ' AND v.cliente_id = ?'
+        countQuery += ' AND v.cliente_id = ?'
+        params.push(cliente_id)
         countParams.push(cliente_id)
       }
 
-      const { total } = await db.get(countSql, countParams)
+      // Executar query de contagem
+      const { total } = await db.get(countQuery, countParams)
 
-      res.json({
-        success: true,
-        data: vendas,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
-        },
-      })
+      // Adicionar GROUP BY, ORDER BY determinístico e paginação
+      const dataQuery = baseQuery + 
+        ' GROUP BY v.id' +
+        ' ORDER BY v.data_venda DESC, v.id DESC' + 
+        ` LIMIT ${pagination.limit} OFFSET ${pagination.offset}`
+
+      // Executar query de dados
+      const vendas = await db.all(dataQuery, params)
+
+      // Retornar resposta paginada
+      res.json(createPaginatedResponse(vendas, total, pagination.page, pagination.limit))
     } catch (error) {
       const { respondWithError } = require('../utils/http-error')
       return respondWithError(res, error, 'Erro ao listar vendas')

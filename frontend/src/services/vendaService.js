@@ -1,4 +1,5 @@
 import api from './api'
+import { buildQuery, buildSafeFilters } from '../utils/http.js'
 
 const vendaService = {
   // Listar vendas (alias para buscarTodas)
@@ -8,15 +9,8 @@ const vendaService = {
 
   // Listar vendas
   async buscarTodas(filtros = {}) {
-    const params = new URLSearchParams()
-
-    if (filtros.data_inicio) params.append('data_inicio', filtros.data_inicio)
-    if (filtros.data_fim) params.append('data_fim', filtros.data_fim)
-    if (filtros.cliente_id) params.append('cliente_id', filtros.cliente_id)
-    if (filtros.page) params.append('page', filtros.page)
-    if (filtros.limit) params.append('limit', filtros.limit)
-
-    const response = await api.get(`/vendas?${params}`)
+    const safeFilters = buildSafeFilters(filtros)
+    const response = await api.get(`/vendas${buildQuery(safeFilters)}`)
     return response.data
   },
 
@@ -34,14 +28,8 @@ const vendaService = {
 
   // Relatório de vendas
   async relatorio(filtros = {}) {
-    const params = new URLSearchParams()
-
-    if (filtros.data_inicio) params.append('data_inicio', filtros.data_inicio)
-    if (filtros.data_fim) params.append('data_fim', filtros.data_fim)
-    if (filtros.tipo_pagamento)
-      params.append('tipo_pagamento', filtros.tipo_pagamento)
-
-    const response = await api.get(`/vendas/relatorio?${params}`)
+    const safeFilters = buildSafeFilters(filtros)
+    const response = await api.get(`/vendas/relatorio${buildQuery(safeFilters)}`)
     return response.data
   },
 

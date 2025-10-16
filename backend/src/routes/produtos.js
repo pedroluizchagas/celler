@@ -3,12 +3,14 @@ const router = express.Router()
 const produtoController = require('../controllers/produtoController')
 const { listProdutos, postProduto } = require('../modules/produtos/produtos.controller')
 const { validateProduto, validateId } = require('../middlewares/validation')
+const { normalizeListQuery, normalizeStatsQuery } = require('../middlewares/normalizeQuery')
+const { validateProdutosQuery, validateStatsQuery, validateIdParam } = require('../middlewares/zodValidation')
 
 // Rotas de produtos
 // Migrado para repositório (SELECT simples + POST tipado)
-router.get('/', listProdutos)
+router.get('/', normalizeListQuery, validateProdutosQuery, listProdutos)
 router.post('/', postProduto)
-router.get('/stats', produtoController.stats)
+router.get('/stats', normalizeStatsQuery, validateStatsQuery, produtoController.stats)
 router.get('/debug', async (req, res) => {
   try {
     const db = require('../utils/database-adapter')
@@ -36,14 +38,14 @@ router.get('/debug', async (req, res) => {
     res.status(500).json({ error: error.message })
   }
 })
-router.get('/alertas', produtoController.alertas)
+router.get('/alertas', normalizeListQuery, validateProdutosQuery, produtoController.alertas)
 router.get('/codigo/:codigo', produtoController.buscarPorCodigo)
-router.get('/:id', validateId, produtoController.show)
-router.put('/:id', validateId, validateProduto, produtoController.update)
-router.post('/:id/movimentar', validateId, produtoController.movimentarEstoque)
+router.get('/:id', validateIdParam, produtoController.show)
+router.put('/:id', validateIdParam, validateProduto, produtoController.update)
+router.post('/:id/movimentar', validateIdParam, produtoController.movimentarEstoque)
 router.put(
   '/alertas/:id/resolver',
-  validateId,
+  validateIdParam,
   produtoController.resolverAlerta
 )
 

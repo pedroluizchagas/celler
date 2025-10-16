@@ -1,4 +1,5 @@
 import api from './api'
+import { buildQuery, buildSafeFilters } from '../utils/http.js'
 
 const toNullableString = (value) => {
   if (value === undefined || value === null) {
@@ -55,14 +56,8 @@ const extractApiError = (error, fallbackMessage = 'Falha ao salvar') => {
 
 const produtoService = {
   async listar(filtros = {}) {
-    const params = new URLSearchParams()
-
-    if (filtros.categoria) params.append('categoria', filtros.categoria)
-    if (filtros.tipo) params.append('tipo', filtros.tipo)
-    if (filtros.estoque_baixo) params.append('estoque_baixo', '1')
-    if (filtros.ativo !== undefined) params.append('ativo', filtros.ativo)
-
-    const response = await api.get(`/produtos?${params}`)
+    const safeFilters = buildSafeFilters(filtros)
+    const response = await api.get(`/produtos${buildQuery(safeFilters)}`)
     return response.data?.data || response.data || []
   },
 

@@ -23,11 +23,43 @@ async function postProduto(req, res) {
   }
 }
 
-// SELECT simples com repositório tipado
-async function listProdutos(_req, res) {
+// SELECT com paginação e filtros usando repositório tipado
+async function listProdutos(req, res) {
   try {
-    const data = await repo.findAll({ ativo: true })
-    return res.json({ success: true, data, total: data.length })
+    const {
+      ativo = true,
+      categoria_id,
+      tipo,
+      estoque_baixo,
+      page = 1,
+      limit = 10
+    } = req.query
+
+    const filtros = {
+      ativo: ativo === 'true' || ativo === true,
+      page: parseInt(page),
+      limit: parseInt(limit)
+    }
+
+    // Adicionar filtros opcionais apenas se fornecidos
+    if (categoria_id) {
+      filtros.categoria_id = parseInt(categoria_id)
+    }
+
+    if (tipo && ['peca', 'servico'].includes(tipo)) {
+      filtros.tipo = tipo
+    }
+
+    if (estoque_baixo === 'true' || estoque_baixo === '1') {
+      filtros.estoque_baixo = true
+    }
+
+    const result = await repo.findAll(filtros)
+    
+    return res.json({ 
+      success: true, 
+      ...result
+    })
   } catch (error) {
     return respondWithError(res, error, 'Erro ao listar produtos')
   }

@@ -1,22 +1,24 @@
 const express = require('express')
 const financeiroController = require('../controllers/financeiroController')
+const { normalizeListQuery, normalizeStatsQuery } = require('../middlewares/normalizeQuery')
+const { validateFinanceiroQuery, validateStatsQuery, validateCategoriasQuery } = require('../middlewares/zodValidation')
 
 const router = express.Router()
 
 // ==================== FLUXO DE CAIXA ====================
-router.get('/fluxo-caixa', financeiroController.listarFluxoCaixa)
+router.get('/fluxo-caixa', normalizeListQuery, validateFinanceiroQuery, financeiroController.listarFluxoCaixa)
 router.post('/fluxo-caixa', financeiroController.adicionarMovimentacao)
-router.get('/fluxo-caixa/resumo', financeiroController.resumoFluxoCaixa)
-router.get('/dashboard', financeiroController.dashboardFinanceiro)
+router.get('/fluxo-caixa/resumo', normalizeStatsQuery, validateStatsQuery, financeiroController.resumoFluxoCaixa)
+router.get('/dashboard', normalizeStatsQuery, validateStatsQuery, financeiroController.dashboardFinanceiro)
 
 // Categorias financeiras
-router.get('/categorias', financeiroController.listarCategorias)
+router.get('/categorias', normalizeListQuery, validateCategoriasQuery, financeiroController.listarCategorias)
 router.post('/categorias', financeiroController.criarCategoria)
 
 // ==================== CONTAS A PAGAR ====================
 
 // Listar contas a pagar
-router.get('/contas-pagar', financeiroController.listarContasPagar)
+router.get('/contas-pagar', normalizeListQuery, validateFinanceiroQuery, financeiroController.listarContasPagar)
 
 // Criar nova conta a pagar
 router.post('/contas-pagar', financeiroController.criarContaPagar)
@@ -30,7 +32,7 @@ router.post('/contas-pagar/:id/pagar', financeiroController.pagarConta)
 // ==================== CONTAS A RECEBER ====================
 
 // Listar contas a receber
-router.get('/contas-receber', financeiroController.listarContasReceber)
+router.get('/contas-receber', normalizeListQuery, validateFinanceiroQuery, financeiroController.listarContasReceber)
 
 // Criar nova conta a receber
 router.post('/contas-receber', financeiroController.criarContaReceber)

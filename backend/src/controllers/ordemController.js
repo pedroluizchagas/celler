@@ -3,12 +3,17 @@ const path = require('path')
 const fs = require('fs')
 
 class OrdemController {
-  // Listar todas as ordens
+  // Listar todas as ordens com paginação determinística
   async index(req, res) {
     try {
-      const { status, cliente_id, prioridade, tecnico } = req.query
+      const { status, cliente_id, prioridade, tecnico, page = 1, limit = 15 } = req.query
+      const { extractPaginationParams, createPaginatedResponse } = require('../utils/pagination')
 
-      let sql = `
+      // Extrair parâmetros de paginação
+      const pagination = extractPaginationParams(req.query, { defaultLimit: 15, maxLimit: 100 })
+
+      // Query base para dados
+      let baseQuery = `
         SELECT 
           o.id, o.cliente_id, o.equipamento, o.defeito_relatado as defeito, o.status, o.data_entrada,
           o.created_at, o.updated_at,
@@ -24,9 +29,17 @@ class OrdemController {
         INNER JOIN clientes c ON o.cliente_id = c.id
       `
 
+      // Query para contagem
+      let countQuery = `
+        SELECT COUNT(*) as total
+        FROM ordens o
+        INNER JOIN clientes c ON o.cliente_id = c.id
+      `
+
       const params = []
       const conditions = []
 
+      // Aplicar filtros
       if (status) {
         conditions.push('o.status = ?')
         params.push(status)
@@ -47,19 +60,27 @@ class OrdemController {
         params.push(`%${tecnico}%`)
       }
 
+      // Adicionar WHERE se há condições
       if (conditions.length > 0) {
-        sql += ' WHERE ' + conditions.join(' AND ')
+        const whereClause = ' WHERE ' + conditions.join(' AND ')
+        baseQuery += whereClause
+        countQuery += whereClause
       }
 
-      sql += ' ORDER BY o.data_entrada DESC'
+      // Executar query de contagem
+      const totalResult = await db.get(countQuery, params)
+      const total = totalResult.total
 
-      const ordens = await db.all(sql, params)
+      // Adicionar ORDER BY determinístico e paginação
+      const dataQuery = baseQuery + 
+        ' ORDER BY o.data_entrada DESC, o.id DESC' + 
+        ` LIMIT ${pagination.limit} OFFSET ${pagination.offset}`
 
-      res.json({
-        success: true,
-        data: ordens,
-        total: ordens.length,
-      })
+      // Executar query de dados
+      const ordens = await db.all(dataQuery, params)
+
+      // Retornar resposta paginada
+      res.json(createPaginatedResponse(ordens, total, pagination.page, pagination.limit))
     } catch (error) {
       const { respondWithError } = require('../utils/http-error')
       return respondWithError(res, error, 'Erro ao listar ordens')

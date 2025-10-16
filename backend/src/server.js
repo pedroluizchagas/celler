@@ -1,4 +1,4 @@
-﻿const express = require('express')
+const express = require('express')
 
 const cors = require('cors')
 
@@ -228,85 +228,25 @@ app.all('/api/whatsapp/*', (req, res) => {
 
 })
 
-// Handler 404
+// Importar middleware de tratamento de erros aprimorado
 
-app.use((req, res) => {
+const { errorHandler, notFoundHandler, timeoutHandler } = require('./middlewares/errorHandler')
 
-  res.status(404).json({ message: 'Rota nÃ£o encontrada' })
+// Middleware de timeout para requisições longas
 
-})
+app.use(timeoutHandler(30000))
 
-// Logger de erros estruturado
+// Handler 404 aprimorado
+
+app.use(notFoundHandler)
+
+// Logger de erros estruturado (mantido para compatibilidade)
 
 app.use(errorLogger)
 
-// Handler global de erros 5xx
+// Handler global de erros aprimorado com requestId
 
-app.use((err, req, res, next) => {
-
-  if (res.headersSent) {
-
-    return next(err)
-
-  }
-
-  const statusCandidate = Number.isInteger(err?.statusCode)
-
-    ? err.statusCode
-
-    : Number.isInteger(err?.status)
-
-      ? err.status
-
-      : 500
-
-  const statusCode = statusCandidate >= 400 && statusCandidate < 600 ? statusCandidate : 500
-
-  const isClientError = statusCode >= 400 && statusCode < 500
-
-  const headers = req?.headers || {}
-
-  const bodyKeys = !req?.body || typeof req.body !== 'object'
-
-    ? []
-
-    : Array.isArray(req.body)
-
-      ? req.body.map((_, index) => `[index:${index}]`)
-
-      : Object.keys(req.body)
-
-  const logContext = {
-
-    statusCode,
-
-    origin: headers.origin || null,
-
-    contentType: headers['content-type'] || null,
-
-    bodyKeys,
-
-  }
-
-  const logMessage = `[ERR] ${req.method} ${req.originalUrl}`
-
-  if (statusCode >= 500) {
-
-    LoggerManager.error(logMessage, err, logContext)
-
-  } else {
-
-    LoggerManager.warn(logMessage, logContext)
-
-  }
-
-  res.status(statusCode).json({
-
-    message: isClientError && err?.message ? err.message : 'Erro interno',
-
-  })
-
-})
+app.use(errorHandler)
 
 // Graceful shutdown
 

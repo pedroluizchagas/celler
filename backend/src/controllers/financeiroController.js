@@ -4,7 +4,7 @@ const { LoggerManager } = require('../utils/logger')
 class FinanceiroController {
   // ==================== FLUXO DE CAIXA ====================
 
-  // Listar movimentações do fluxo de caixa
+  // Listar movimentações do fluxo de caixa com paginação determinística
   async listarFluxoCaixa(req, res) {
     try {
       const {
@@ -13,14 +13,17 @@ class FinanceiroController {
         tipo,
         categoria,
         formaPagamento,
-        page = 1,
-        limit = 50,
       } = req.query
+
+      const { extractPaginationParams, createPaginatedResponse } = require('../utils/pagination')
+
+      // Extrair parâmetros de paginação
+      const pagination = extractPaginationParams(req.query, { defaultLimit: 25, maxLimit: 100 })
 
       let whereClause = '1=1'
       let params = []
 
-      // Filtros
+      // Aplicar filtros
       if (dataInicio) {
         whereClause += ' AND fc.data_movimentacao >= ?'
         params.push(dataInicio)
@@ -42,10 +45,8 @@ class FinanceiroController {
         params.push(formaPagamento)
       }
 
-      const offset = (page - 1) * limit
-
-      const movimentacoes = await db.all(
-        `
+      // Query base para dados
+      const baseQuery = `
         SELECT 
           fc.*,
           cf.nome as categoria_nome,
@@ -62,32 +63,24 @@ class FinanceiroController {
         LEFT JOIN categorias_financeiras cf ON fc.categoria_id = cf.id
         LEFT JOIN clientes c ON fc.cliente_id = c.id
         WHERE ${whereClause}
-        ORDER BY fc.data_movimentacao DESC, fc.created_at DESC
-        LIMIT ? OFFSET ?
-      `,
-        [...params, limit, offset]
-      )
+      `
 
-      // Contar total para paginação
+      // Executar query de contagem
       const totalResult = await db.get(
-        `
-        SELECT COUNT(*) as total 
-        FROM fluxo_caixa fc 
-        WHERE ${whereClause}
-      `,
+        `SELECT COUNT(*) as total FROM fluxo_caixa fc WHERE ${whereClause}`,
         params
       )
 
-      res.json({
-        success: true,
-        data: movimentacoes,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total: totalResult.total,
-          pages: Math.ceil(totalResult.total / limit),
-        },
-      })
+      // Adicionar ORDER BY determinístico e paginação
+      const dataQuery = baseQuery + 
+        ' ORDER BY fc.data_movimentacao DESC, fc.id DESC' + 
+        ` LIMIT ${pagination.limit} OFFSET ${pagination.offset}`
+
+      // Executar query de dados
+      const movimentacoes = await db.all(dataQuery, params)
+
+      // Retornar resposta paginada
+      res.json(createPaginatedResponse(movimentacoes, totalResult.total, pagination.page, pagination.limit))
     } catch (error) {
       const { respondWithError } = require('../utils/http-error')
       return respondWithError(res, error, 'Erro ao listar fluxo de caixa')

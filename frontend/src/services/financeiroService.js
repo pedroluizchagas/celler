@@ -1,4 +1,5 @@
 import api from './api'
+import { buildQuery, buildSafeFilters } from '../utils/http.js'
 
 class FinanceiroService {
   // ==================== OPÇÕES PARA FORMULÁRIOS ====================
@@ -46,21 +47,8 @@ class FinanceiroService {
   // Listar movimentações do fluxo de caixa
   async listarFluxoCaixa(filtros = {}) {
     try {
-      const params = new URLSearchParams()
-
-      Object.keys(filtros).forEach((key) => {
-        if (
-          filtros[key] !== null &&
-          filtros[key] !== undefined &&
-          filtros[key] !== ''
-        ) {
-          params.append(key, filtros[key])
-        }
-      })
-
-      const response = await api.get(
-        `/financeiro/fluxo-caixa?${params.toString()}`
-      )
+      const safeFilters = buildSafeFilters(filtros)
+      const response = await api.get(`/financeiro/fluxo-caixa${buildQuery(safeFilters)}`)
       return response.data
     } catch (error) {
       console.error('Erro ao listar fluxo de caixa:', error)
@@ -71,13 +59,9 @@ class FinanceiroService {
   // Resumo do fluxo de caixa
   async resumoFluxoCaixa(dataInicio = null, dataFim = null) {
     try {
-      const params = new URLSearchParams()
-      if (dataInicio) params.append('data_inicio', dataInicio)
-      if (dataFim) params.append('data_fim', dataFim)
-
-      const response = await api.get(
-        `/financeiro/fluxo-caixa/resumo?${params.toString()}`
-      )
+      const filtros = { data_inicio: dataInicio, data_fim: dataFim }
+      const safeFilters = buildSafeFilters(filtros)
+      const response = await api.get(`/financeiro/fluxo-caixa/resumo${buildQuery(safeFilters)}`)
       return response.data
     } catch (error) {
       console.error('Erro ao buscar resumo do fluxo de caixa:', error)
@@ -112,21 +96,8 @@ class FinanceiroService {
   // Listar contas a pagar
   async listarContasPagar(filtros = {}) {
     try {
-      const params = new URLSearchParams()
-
-      Object.keys(filtros).forEach((key) => {
-        if (
-          filtros[key] !== null &&
-          filtros[key] !== undefined &&
-          filtros[key] !== ''
-        ) {
-          params.append(key, filtros[key])
-        }
-      })
-
-      const response = await api.get(
-        `/financeiro/contas-pagar?${params.toString()}`
-      )
+      const safeFilters = buildSafeFilters(filtros)
+      const response = await api.get(`/financeiro/contas-pagar${buildQuery(safeFilters)}`)
       return response.data
     } catch (error) {
       console.error('Erro ao listar contas a pagar:', error)
@@ -164,21 +135,8 @@ class FinanceiroService {
   // Listar contas a receber
   async listarContasReceber(filtros = {}) {
     try {
-      const params = new URLSearchParams()
-
-      Object.keys(filtros).forEach((key) => {
-        if (
-          filtros[key] !== null &&
-          filtros[key] !== undefined &&
-          filtros[key] !== ''
-        ) {
-          params.append(key, filtros[key])
-        }
-      })
-
-      const response = await api.get(
-        `/financeiro/contas-receber?${params.toString()}`
-      )
+      const safeFilters = buildSafeFilters(filtros)
+      const response = await api.get(`/financeiro/contas-receber${buildQuery(safeFilters)}`)
       return response.data
     } catch (error) {
       console.error('Erro ao listar contas a receber:', error)
@@ -216,10 +174,9 @@ class FinanceiroService {
   // Listar categorias financeiras
   async listarCategorias(tipo = null) {
     try {
-      const url = tipo
-        ? `/financeiro/categorias?tipo=${tipo}`
-        : '/financeiro/categorias'
-      const response = await api.get(url)
+      const filtros = { tipo }
+      const safeFilters = buildSafeFilters(filtros)
+      const response = await api.get(`/financeiro/categorias${buildQuery(safeFilters)}`)
       return response.data
     } catch (error) {
       console.error('Erro ao listar categorias financeiras:', error)
@@ -243,13 +200,9 @@ class FinanceiroService {
   // Relatório mensal
   async relatorioMensal(mes = null, ano = null) {
     try {
-      const params = new URLSearchParams()
-      if (mes) params.append('mes', mes)
-      if (ano) params.append('ano', ano)
-
-      const response = await api.get(
-        `/financeiro/relatorio-mensal?${params.toString()}`
-      )
+      const filtros = { mes, ano }
+      const safeFilters = buildSafeFilters(filtros)
+      const response = await api.get(`/financeiro/relatorio-mensal${buildQuery(safeFilters)}`)
       return response.data
     } catch (error) {
       console.error('Erro ao gerar relatório mensal:', error)

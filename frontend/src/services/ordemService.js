@@ -1,16 +1,12 @@
 import api from './api'
+import { buildQuery, buildSafeFilters } from '../utils/http.js'
 
 export const ordemService = {
   // Listar todas as ordens
   async listar(filtros = {}) {
     try {
-      const params = new URLSearchParams()
-      if (filtros.status) params.append('status', filtros.status)
-      if (filtros.cliente_id) params.append('cliente_id', filtros.cliente_id)
-      if (filtros.prioridade) params.append('prioridade', filtros.prioridade)
-      if (filtros.tecnico) params.append('tecnico', filtros.tecnico)
-
-      const response = await api.get(`/ordens?${params.toString()}`)
+      const safeFilters = buildSafeFilters(filtros)
+      const response = await api.get(`/ordens${buildQuery(safeFilters)}`)
       return response.data
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Erro ao listar ordens')
@@ -122,13 +118,8 @@ export const ordemService = {
   // Gerar relatório de ordens
   async gerarRelatorio(filtros = {}) {
     try {
-      const params = new URLSearchParams()
-      if (filtros.data_inicio) params.append('data_inicio', filtros.data_inicio)
-      if (filtros.data_fim) params.append('data_fim', filtros.data_fim)
-      if (filtros.status) params.append('status', filtros.status)
-      if (filtros.tecnico) params.append('tecnico', filtros.tecnico)
-
-      const response = await api.get(`/ordens/relatorio?${params.toString()}`)
+      const safeFilters = buildSafeFilters(filtros)
+      const response = await api.get(`/ordens/relatorio${buildQuery(safeFilters)}`)
       return response.data
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Erro ao gerar relatório')

@@ -10,7 +10,7 @@
  * @param {Object} res - Response object  
  * @param {Function} next - Next middleware function
  */
-export function normalizeQuery(req, res, next) {
+function normalizeQuery(req, res, next) {
   const q = req.query;
   
   const cleaned = {};
@@ -42,7 +42,7 @@ export function normalizeQuery(req, res, next) {
  * Middleware específico para rotas de listagem com paginação
  * Aplica normalização mais rigorosa para endpoints de listagem
  */
-export function normalizeListQuery(req, res, next) {
+function normalizeListQuery(req, res, next) {
   const q = req.query;
   
   const cleaned = {};
@@ -168,7 +168,7 @@ function validateNumber(value) {
  * Middleware para endpoints de estatísticas/dashboard
  * Aplica validação específica para parâmetros de relatórios
  */
-export function normalizeStatsQuery(req, res, next) {
+function normalizeStatsQuery(req, res, next) {
   const q = req.query;
   const cleaned = {};
   
@@ -203,3 +203,9 @@ export function normalizeStatsQuery(req, res, next) {
   req.query = cleaned;
   next();
 }
+
+module.exports = {
+  normalizeQuery,
+  normalizeListQuery,
+  normalizeStatsQuery
+};

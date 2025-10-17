@@ -6,10 +6,9 @@ CREATE OR REPLACE VIEW public.produtos_com_alertas AS
 SELECT 
   p.id,
   p.nome,
-  p.sku,
   p.categoria_id,
   c.nome AS categoria_nome,
-  c.tipo AS tipo,
+  p.tipo AS tipo,
   p.estoque_atual,
   p.estoque_minimo,
   p.estoque_maximo,

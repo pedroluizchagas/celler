@@ -60,7 +60,6 @@ CREATE OR REPLACE VIEW public.produtos_com_alertas AS
 SELECT 
   p.id,
   p.nome,
-  p.sku,
   p.categoria_id,
   c.nome AS categoria_nome,
   p.tipo AS tipo,

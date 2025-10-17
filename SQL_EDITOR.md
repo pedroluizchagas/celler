@@ -1,47 +1,130 @@
-# Supabase SQL Editor — Guia de Aplicação/Verificação (Produção)
+# Supabase SQL Editor — Run Completa (Alinhamento + RPCs)
 
-Este guia descreve exatamente o que verificar e, se necessário, executar no SQL Editor do Supabase para alinhar o banco com as mudanças feitas no backend.
+Este script unifica tudo que precisa ser aplicado no SQL Editor do Supabase para alinhar o schema com o backend atual, corrigir a view `produtos_com_alertas`, criar/atualizar RPCs (incluindo as transacionais) e recarregar o schema do PostgREST.
 
-Importante:
-- Os scripts abaixo são idempotentes (usam `CREATE OR REPLACE`) e podem ser executados com segurança mais de uma vez.
-- Se o backend estiver usando a Service Role key (recomendado), as funções RPC com `SECURITY DEFINER` funcionarão mesmo com RLS ligada.
-- Após criar/alterar funções ou views, execute o `NOTIFY pgrst, 'reload schema'` para forçar o PostgREST (API do Supabase) a recarregar o schema.
-
-## 1) Verificações rápidas
-
-Execute no SQL Editor:
+Instruções rápidas:
+- Cole todo o bloco abaixo no SQL Editor e execute de uma vez.
+- O script é idempotente (pode rodar mais de uma vez com segurança).
+- Se seu backend usa a Service Role key, as funções SECURITY DEFINER funcionarão sem GRANT adicional; caso contrário, há GRANTs no final (comente/descomente conforme necessário).
 
 ```sql
--- Views e RPCs esperados
-SELECT EXISTS (
-  SELECT 1 FROM information_schema.views
-  WHERE table_schema = 'public' AND table_name = 'produtos_com_alertas'
-) AS has_produtos_com_alertas;
+-- ============================================================
+-- 0) Extensões
+-- ============================================================
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
-SELECT routine_name
-FROM information_schema.routines
-WHERE routine_schema = 'public'
-  AND routine_name IN ('dashboard_resumo_mes','dashboard_resumo_do_dia','vendas_relatorio_periodo');
+-- ============================================================
+-- 1) Ajustes de schema para compatibilidade com o backend
+--    (Adiciona colunas esperadas e migra dados quando possível)
+-- ============================================================
 
-SELECT routine_name
-FROM information_schema.routines
-WHERE routine_schema = 'public'
-  AND routine_name IN ('vendas_criar','ordens_criar','ordens_atualizar');
-```
+-- 1.1) VENDAS — colunas esperadas
+ALTER TABLE IF EXISTS public.vendas
+  ADD COLUMN IF NOT EXISTS tipo_pagamento text,
+  ADD COLUMN IF NOT EXISTS valor_total numeric,
+  ADD COLUMN IF NOT EXISTS data_venda timestamptz DEFAULT now();
 
-Se algum item estiver ausente, aplique os patches das seções seguintes.
+UPDATE public.vendas SET tipo_pagamento = forma_pagamento
+WHERE tipo_pagamento IS NULL AND forma_pagamento IS NOT NULL;
 
-## 2) View de produtos com alertas (com coluna `tipo`)
+UPDATE public.vendas SET valor_total = total
+WHERE valor_total IS NULL AND total IS NOT NULL;
 
-```sql
+UPDATE public.vendas SET data_venda = created_at
+WHERE data_venda IS NULL AND created_at IS NOT NULL;
+
+-- 1.2) VENDA_ITENS — compatibilidade de nome
+ALTER TABLE IF EXISTS public.venda_itens
+  ADD COLUMN IF NOT EXISTS preco_total numeric;
+
+-- Preenche preco_total a partir de total_item (se existir)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'venda_itens' AND column_name = 'total_item'
+  ) THEN
+    UPDATE public.venda_itens SET preco_total = total_item WHERE preco_total IS NULL;
+  END IF;
+END $$;
+
+-- 1.3) ORDEM_FOTOS — compatibilidade de nome do caminho
+ALTER TABLE IF EXISTS public.ordem_fotos
+  ADD COLUMN IF NOT EXISTS caminho text;
+
+UPDATE public.ordem_fotos SET caminho = caminho_arquivo
+WHERE caminho IS NULL AND caminho_arquivo IS NOT NULL;
+
+-- 1.4) ORDEM_PECAS — colunas adicionais usadas pelo app
+ALTER TABLE IF EXISTS public.ordem_pecas
+  ADD COLUMN IF NOT EXISTS nome_peca text,
+  ADD COLUMN IF NOT EXISTS codigo_peca text,
+  ADD COLUMN IF NOT EXISTS fornecedor text,
+  ADD COLUMN IF NOT EXISTS observacoes text;
+
+-- Migra descricao -> nome_peca, se necessário
+UPDATE public.ordem_pecas SET nome_peca = descricao
+WHERE nome_peca IS NULL AND descricao IS NOT NULL;
+
+-- 1.5) ORDEM_SERVICOS — colunas adicionais usadas pelo app
+ALTER TABLE IF EXISTS public.ordem_servicos
+  ADD COLUMN IF NOT EXISTS descricao_servico text,
+  ADD COLUMN IF NOT EXISTS tempo_gasto integer,
+  ADD COLUMN IF NOT EXISTS valor_servico numeric,
+  ADD COLUMN IF NOT EXISTS observacoes text;
+
+-- Migração básica para novos nomes
+UPDATE public.ordem_servicos
+  SET descricao_servico = COALESCE(descricao_servico, descricao),
+      valor_servico     = COALESCE(valor_servico, valor)
+WHERE TRUE;
+
+-- Opcional: preencher tempo_gasto com tempo_real (se existir), senão tempo_estimado
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'ordem_servicos' AND column_name = 'tempo_real'
+  ) THEN
+    UPDATE public.ordem_servicos SET tempo_gasto = tempo_real WHERE tempo_gasto IS NULL;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'ordem_servicos' AND column_name = 'tempo_estimado'
+  ) THEN
+    UPDATE public.ordem_servicos SET tempo_gasto = COALESCE(tempo_gasto, tempo_estimado) WHERE tempo_gasto IS NULL;
+  END IF;
+END $$;
+
+-- 1.6) ORDEM_HISTORICO — data de alteração compatível com o app
+ALTER TABLE IF EXISTS public.ordem_historico
+  ADD COLUMN IF NOT EXISTS data_alteracao timestamptz DEFAULT now();
+
+UPDATE public.ordem_historico SET data_alteracao = created_at
+WHERE created_at IS NOT NULL;
+
+-- 1.7) ALERTAS_ESTOQUE — flag ativo usada pelo app
+ALTER TABLE IF EXISTS public.alertas_estoque
+  ADD COLUMN IF NOT EXISTS ativo boolean DEFAULT true;
+
+UPDATE public.alertas_estoque SET ativo = true WHERE ativo IS NULL;
+
+-- ============================================================
+-- 2) View produtos_com_alertas
+--    Corrige conflitos de nomes/estrutura e unifica definição
+--    Esperada pelo backend: baseada em produtos, não em alertas
+-- ============================================================
+
+DROP VIEW IF EXISTS public.produtos_com_alertas CASCADE;
+
 CREATE OR REPLACE VIEW public.produtos_com_alertas AS
 SELECT 
   p.id,
   p.nome,
-  p.sku,
   p.categoria_id,
   c.nome AS categoria_nome,
-  c.tipo AS tipo,
+  p.tipo AS tipo,
   p.estoque_atual,
   p.estoque_minimo,
   p.estoque_maximo,
@@ -61,13 +144,14 @@ SELECT
   END AS tem_alerta
 FROM public.produtos p
 LEFT JOIN public.categorias c ON c.id = p.categoria_id;
-```
 
-## 3) RPCs de Dashboard (se necessário)
+-- Herdar RLS das tabelas base (opcional, recomendado)
+ALTER VIEW public.produtos_com_alertas SET (security_invoker = true);
 
-Em ambientes onde o runner de migração ainda não aplicou as funções do dashboard, garanta que estas existam (dos arquivos `0004_dashboard_rpcs_views.sql` e `0005_dashboard_more_rpcs.sql`). Se estiverem faltando, recrie ao menos as duas principais:
+-- ============================================================
+-- 3) RPCs do dashboard (principais)
+-- ============================================================
 
-```sql
 -- Resumo por mês
 CREATE OR REPLACE FUNCTION public.dashboard_resumo_mes(desde date)
 RETURNS TABLE (
@@ -108,15 +192,46 @@ RETURNS TABLE (
     COALESCE(SUM(CASE WHEN o.data_conclusao::date = data AND o.status = 'entregue' THEN o.valor_final ELSE 0 END), 0)
   FROM public.ordens o;
 $$;
-```
 
-Opcionalmente, aplique também as demais RPCs de `0005_*` (prioridades do mês, ordens recentes, técnicos ativos) conforme necessidade.
+-- ============================================================
+-- 4) RPCs de relatórios/estatísticas de vendas
+-- ============================================================
 
-## 4) RPCs transacionais (robustez máxima)
+-- Relatório por período (usado na API)
+CREATE OR REPLACE FUNCTION public.vendas_relatorio_periodo(
+  p_data_inicio date DEFAULT NULL,
+  p_data_fim    date DEFAULT NULL,
+  p_tipo_pagamento text DEFAULT NULL
+) RETURNS TABLE (
+  dia date,
+  qtd_vendas int,
+  valor_total numeric,
+  ticket_medio numeric
+) LANGUAGE sql AS $$
+  SELECT
+    (COALESCE(p_data_inicio, (now() - interval '30 day')::date) + i)::date AS dia,
+    COALESCE(v.cont, 0)::int AS qtd_vendas,
+    COALESCE(v.total, 0)::numeric AS valor_total,
+    CASE WHEN COALESCE(v.cont,0) > 0 THEN (COALESCE(v.total,0) / v.cont) ELSE 0 END AS ticket_medio
+  FROM generate_series(0, GREATEST(0, (COALESCE(p_data_fim, now()::date) - COALESCE(p_data_inicio, (now() - interval '30 day')::date)))::int)) AS g(i)
+  LEFT JOIN (
+    SELECT
+      (COALESCE(data_venda, created_at))::date AS dia,
+      COUNT(*) AS cont,
+      COALESCE(SUM(valor_total), 0) AS total
+    FROM public.vendas
+    WHERE (p_data_inicio IS NULL OR (COALESCE(data_venda, created_at))::date >= p_data_inicio)
+      AND (p_data_fim    IS NULL OR (COALESCE(data_venda, created_at))::date <= p_data_fim)
+      AND (p_tipo_pagamento IS NULL OR tipo_pagamento = p_tipo_pagamento)
+    GROUP BY 1
+  ) v ON v.dia = (COALESCE(p_data_inicio, (now() - interval '30 day')::date) + i)::date
+  ORDER BY 1 DESC;
+$$;
 
-Estas funções tornam as operações de **vendas** e **ordens** atômicas. O backend já tenta usá-las; se não existirem, ele faz fallback. Recomendo criá-las.
+-- ============================================================
+-- 5) RPCs transacionais (robustez máxima)
+-- ============================================================
 
-```sql
 -- VENDAS: cria venda com itens, estoque, alertas e financeiro
 CREATE OR REPLACE FUNCTION public.vendas_criar(
   p_cliente_id integer,
@@ -201,7 +316,7 @@ BEGIN
   RETURN v_venda;
 END; $$;
 
--- ORDEM: criar
+-- ORDENS: criar (transacional)
 CREATE OR REPLACE FUNCTION public.ordens_criar(p_payload jsonb)
 RETURNS public.ordens
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
@@ -246,7 +361,7 @@ BEGIN
   SELECT * INTO v_ord FROM public.ordens WHERE id = v_id; RETURN v_ord;
 END; $$;
 
--- ORDEM: atualizar
+-- ORDENS: atualizar (transacional)
 CREATE OR REPLACE FUNCTION public.ordens_atualizar(p_id integer, p_payload jsonb)
 RETURNS public.ordens
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
@@ -305,45 +420,22 @@ BEGIN
 
   SELECT * INTO v_ord FROM public.ordens WHERE id = p_id; RETURN v_ord;
 END; $$;
-```
 
-### Permissões (se o backend NÃO usa Service Role)
-
-Se o backend estiver usando uma API key de `authenticated` (em vez da Service Role), conceda `EXECUTE` para o papel correspondente:
-
-```sql
+-- ============================================================
+-- 6) Grants (somente se o backend NÃO usa Service Role)
+--    Comente se for desnecessário
+-- ============================================================
 GRANT EXECUTE ON FUNCTION public.vendas_criar(integer, text, numeric, text, jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.ordens_criar(jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.ordens_atualizar(integer, jsonb) TO authenticated;
-```
 
-## 5) Recarregar o schema do PostgREST
-
-```sql
-NOTIFY pgrst, 'reload schema';
--- ou
+-- ============================================================
+-- 7) Recarregar schema do PostgREST
+-- ============================================================
 SELECT pg_notify('pgrst', 'reload schema');
 ```
 
-## 6) Smoke tests (opcional) — com ROLLBACK
-
-Para validar rapidamente sem persistir alterações, use transação manual e `ROLLBACK`.
-
-```sql
-BEGIN;
--- CUIDADO: ajuste IDs e itens de teste!
--- Exemplo de simulação de venda transacional
-SELECT public.vendas_criar(
-  p_cliente_id := NULL,
-  p_tipo_pagamento := 'dinheiro',
-  p_desconto := 0,
-  p_observacoes := 'Teste via SQL Editor',
-  p_itens := '[{"produto_id": 1, "quantidade": 1, "preco_unitario": 10}]'::jsonb
-);
-ROLLBACK;
-```
-
-## 7) Notas
-- Se as funções do dashboard (`dashboard_resumo_mes`, `dashboard_resumo_do_dia`, etc.) já existirem, não há problema: este guia usa `CREATE OR REPLACE`.
-- O backend já aplica automaticamente as migrações na subida (Render/produção). Use este guia apenas se quiser antecipar no SQL Editor, corrigir ambientes travados ou validar manualmente.
-- Com RLS habilitado, `SECURITY DEFINER` e a Service Role key garantem execução sem bloqueios. Se usar outra API key, revise/políticas e `GRANT EXECUTE`.
+Notas:
+- Este script substitui definições antigas da view `produtos_com_alertas` (incluindo versões que partiam de `alertas_estoque`). Agora a view é baseada em `produtos` e expõe `tipo` de `produtos.tipo` (como o backend espera).
+- As RPCs transacionais permitem operações atômicas de vendas e ordens; o backend já tenta usá-las e faz fallback se ausentes.
+- Caso tenha dependências fortes na view antiga, ajuste-as antes de rodar o DROP VIEW.

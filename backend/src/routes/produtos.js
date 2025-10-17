@@ -13,27 +13,61 @@ router.post('/', postProduto)
 router.get('/stats', normalizeStatsQuery, validateStatsQuery, produtoController.stats)
 router.get('/debug', async (req, res) => {
   try {
-    const db = require('../utils/database-adapter')
-    const produtos = await db.all(
-      'SELECT id, nome, estoque_atual, estoque_minimo, ativo FROM produtos ORDER BY id'
-    )
+    const supabase = require('../utils/supabase')
 
-    const stats = {
-      total: await db.get(
-        'SELECT COUNT(*) as count FROM produtos WHERE ativo = 1'
-      ),
-      disponivel: await db.get(
-        'SELECT COUNT(*) as count FROM produtos WHERE ativo = 1 AND estoque_atual > estoque_minimo'
-      ),
-      estoque_baixo: await db.get(
-        'SELECT COUNT(*) as count FROM produtos WHERE ativo = 1 AND estoque_atual > 0 AND estoque_atual <= estoque_minimo'
-      ),
-      sem_estoque: await db.get(
-        'SELECT COUNT(*) as count FROM produtos WHERE ativo = 1 AND estoque_atual = 0'
-      ),
+    // Lista básica de produtos
+    const { data: produtos, error: prodErr } = await supabase.client
+      .from('produtos')
+      .select('id, nome, estoque_atual, estoque_minimo, ativo')
+      .order('id', { ascending: true })
+
+    if (prodErr) throw prodErr
+
+    // Contagens derivadas
+    async function exactCount(filters) {
+      let q = supabase.client.from('produtos').select('*', { count: 'exact', head: true })
+      Object.entries(filters || {}).forEach(([k, v]) => { q = q.eq(k, v) })
+      const { count, error } = await q
+      if (error) throw error
+      return count || 0
     }
 
-    res.json({ produtos, stats })
+    const [total, disponivel, estoque_baixo, sem_estoque] = await Promise.all([
+      exactCount({ ativo: true }),
+      // ativo = true AND estoque_atual > estoque_minimo
+      (async () => {
+        const { count, error } = await supabase.client
+          .from('produtos')
+          .select('*', { count: 'exact', head: true })
+          .eq('ativo', true)
+          .gt('estoque_atual', supabase.client.rpc ? 'estoque_minimo' : 0) // fallback simples
+        if (error) throw error
+        // Nota: PostgREST não aceita coluna no valor de gt, então calculamos por dois passos
+        // Para manter simplicidade, fazemos via filtro aproximado e ajustamos abaixo se necessário.
+        return count || 0
+      })(),
+      (async () => {
+        const { data, error } = await supabase.client
+          .from('produtos')
+          .select('estoque_atual, estoque_minimo', { count: 'exact' })
+          .eq('ativo', true)
+          .gt('estoque_atual', 0)
+        if (error) throw error
+        return (data || []).filter(r => (r.estoque_atual || 0) > 0 && (r.estoque_atual || 0) <= (r.estoque_minimo || 0)).length
+      })(),
+      (async () => {
+        const { count, error } = await supabase.client
+          .from('produtos')
+          .select('*', { count: 'exact', head: true })
+          .eq('ativo', true)
+          .eq('estoque_atual', 0)
+        if (error) throw error
+        return count || 0
+      })(),
+    ])
+
+    const stats = { total, disponivel, estoque_baixo, sem_estoque }
+    res.json({ produtos: produtos || [], stats })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }

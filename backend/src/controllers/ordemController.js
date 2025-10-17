@@ -835,69 +835,60 @@ class OrdemController {
     }
   }
 
-  // Relatório de ordens por período
+  // Relatório de ordens por período (sem SQL cru, usando Supabase)
   async relatorio(req, res) {
     try {
-      const { data_inicio, data_fim, status, tecnico } = req.query
+      const { data_inicio = null, data_fim = null, status = null, tecnico = null } = req.query
+      const supabase = require('../utils/supabase')
 
-      let sql = `
-        SELECT 
-          o.id, o.equipamento, o.marca, o.modelo, o.defeito_relatado as defeito, o.diagnostico, o.solucao,
-          o.status, o.prioridade, o.valor_orcamento, o.valor_final,
-          o.data_entrada, o.data_finalizacao, o.tecnico_responsavel,
-          c.nome as cliente_nome, c.telefone as cliente_telefone
-        FROM ordens o
-        INNER JOIN clientes c ON o.cliente_id = c.id
-        WHERE 1=1
-      `
+      let q = supabase.client
+        .from('ordens')
+        .select(`
+          id, equipamento, marca, modelo, defeito_relatado, diagnostico, solucao,
+          status, prioridade, valor_orcamento, valor_final,
+          data_entrada, data_conclusao, tecnico_responsavel,
+          clientes:clientes (nome, telefone)
+        `)
 
-      const params = []
+      if (data_inicio) q = q.gte('data_entrada', `${data_inicio} 00:00:00`)
+      if (data_fim) q = q.lte('data_entrada', `${data_fim} 23:59:59`)
+      if (status) q = q.eq('status', status)
+      if (tecnico) q = q.ilike('tecnico_responsavel', `%${tecnico}%`)
 
-      if (data_inicio) {
-        sql += ' AND DATE(o.data_entrada) >= ?'
-        params.push(data_inicio)
-      }
+      q = q.order('data_entrada', { ascending: false })
 
-      if (data_fim) {
-        sql += ' AND DATE(o.data_entrada) <= ?'
-        params.push(data_fim)
-      }
+      const { data, error } = await q
+      if (error) throw error
 
-      if (status) {
-        sql += ' AND o.status = ?'
-        params.push(status)
-      }
+      const ordens = (data || []).map(o => ({
+        id: o.id,
+        equipamento: o.equipamento,
+        marca: o.marca,
+        modelo: o.modelo,
+        defeito: o.defeito_relatado,
+        diagnostico: o.diagnostico,
+        solucao: o.solucao,
+        status: o.status,
+        prioridade: o.prioridade,
+        valor_orcamento: o.valor_orcamento,
+        valor_final: o.valor_final,
+        data_entrada: o.data_entrada,
+        data_finalizacao: o.data_conclusao,
+        tecnico_responsavel: o.tecnico_responsavel,
+        cliente_nome: o.clientes?.nome || null,
+        cliente_telefone: o.clientes?.telefone || null,
+      }))
 
-      if (tecnico) {
-        sql += ' AND o.tecnico_responsavel LIKE ?'
-        params.push(`%${tecnico}%`)
-      }
-
-      sql += ' ORDER BY o.data_entrada DESC'
-
-      const ordens = await db.all(sql, params)
-
-      // Calcular totais
       const totais = {
         quantidade: ordens.length,
-        valor_orcamento: ordens.reduce(
-          (sum, o) => sum + (parseFloat(o.valor_orcamento) || 0),
-          0
-        ),
-        valor_final: ordens.reduce(
-          (sum, o) => sum + (parseFloat(o.valor_final) || 0),
-          0
-        ),
+        valor_orcamento: ordens.reduce((sum, o) => sum + (parseFloat(o.valor_orcamento) || 0), 0),
+        valor_final: ordens.reduce((sum, o) => sum + (parseFloat(o.valor_final) || 0), 0),
         por_status: {},
       }
 
-      // Agrupar por status
-      ordens.forEach((ordem) => {
-        if (!totais.por_status[ordem.status]) {
-          totais.por_status[ordem.status] = 0
-        }
-        totais.por_status[ordem.status]++
-      })
+      for (const ordem of ordens) {
+        totais.por_status[ordem.status] = (totais.por_status[ordem.status] || 0) + 1
+      }
 
       res.json({
         success: true,

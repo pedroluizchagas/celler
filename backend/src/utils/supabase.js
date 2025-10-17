@@ -225,7 +225,7 @@ class SupabaseManager {
       .filter(row => row.status === 'entregue')
       .reduce((sum, row) => sum + (parseFloat(row.valor_final) || 0), 0)
     const pendente = data
-      .filter(row => ['recebido', 'em_analise', 'em_reparo', 'pronto'].includes(row.status))
+      .filter(row => ['aguardando', 'em_andamento', 'aguardando_peca', 'pronto'].includes(row.status))
       .reduce((sum, row) => sum + (parseFloat(row.valor_final) || 0), 0)
     
     return { total, entregue, pendente }

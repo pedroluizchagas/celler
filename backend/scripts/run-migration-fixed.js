@@ -22,23 +22,14 @@ const supabase = createClient(supabaseUrl, supabaseKey)
 
 function loadSqlFiles() {
   const files = []
-  // Arquivo legado principal
-  files.push(path.join(__dirname, '..', 'migrations', 'supabase-migration-fixed.sql'))
-  
-  // Novos fixes locais neste repo
-  const localFix = path.join(__dirname, '..', 'migrations', 'fix_dashboard_and_products.sql')
-  if (fs.existsSync(localFix)) files.push(localFix)
+  // Somente arquivos simples (schema/views leves) — evitar PL/pgSQL pesados
+  const base = path.join(__dirname, '..', 'migrations', 'supabase-migration-fixed.sql')
+  if (fs.existsSync(base)) files.push(base)
 
-  // Alinhamento com SQL-run (diferenças de schema)
   const align = path.join(__dirname, '..', 'migrations', 'align_sqlrun_schema.sql')
   if (fs.existsSync(align)) files.push(align)
 
-  // Migrations da pasta supabase (dashboard/views)
-  const mig4 = path.join(__dirname, '..', '..', 'supabase', 'migrations', '0004_dashboard_rpcs_views.sql')
-  const mig5 = path.join(__dirname, '..', '..', 'supabase', 'migrations', '0005_dashboard_more_rpcs.sql')
-  if (fs.existsSync(mig4)) files.push(mig4)
-  if (fs.existsSync(mig5)) files.push(mig5)
-
+  // NÃO incluir arquivos com funções PL/pgSQL (ex.: 0004/0005, fix_dashboard_and_products)
   return files
 }
 

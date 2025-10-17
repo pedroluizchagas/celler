@@ -14,6 +14,17 @@ Instruções rápidas:
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- Função utilitária para execução via runner (rpc exec)
+CREATE OR REPLACE FUNCTION public.exec(sql text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public AS $$
+BEGIN
+  EXECUTE sql;
+END;
+$$;
+
 -- ============================================================
 -- 1) Ajustes de schema para compatibilidade com o backend
 --    (Adiciona colunas esperadas e migra dados quando possível)
@@ -208,24 +219,33 @@ CREATE OR REPLACE FUNCTION public.vendas_relatorio_periodo(
   valor_total numeric,
   ticket_medio numeric
 ) LANGUAGE sql AS $$
+WITH bounds AS (
   SELECT
-    (COALESCE(p_data_inicio, (now() - interval '30 day')::date) + i)::date AS dia,
-    COALESCE(v.cont, 0)::int AS qtd_vendas,
-    COALESCE(v.total, 0)::numeric AS valor_total,
-    CASE WHEN COALESCE(v.cont,0) > 0 THEN (COALESCE(v.total,0) / v.cont) ELSE 0 END AS ticket_medio
-  FROM generate_series(0, GREATEST(0, (COALESCE(p_data_fim, now()::date) - COALESCE(p_data_inicio, (now() - interval '30 day')::date)))::int)) AS g(i)
-  LEFT JOIN (
-    SELECT
-      (COALESCE(data_venda, created_at))::date AS dia,
-      COUNT(*) AS cont,
-      COALESCE(SUM(valor_total), 0) AS total
-    FROM public.vendas
-    WHERE (p_data_inicio IS NULL OR (COALESCE(data_venda, created_at))::date >= p_data_inicio)
-      AND (p_data_fim    IS NULL OR (COALESCE(data_venda, created_at))::date <= p_data_fim)
-      AND (p_tipo_pagamento IS NULL OR tipo_pagamento = p_tipo_pagamento)
-    GROUP BY 1
-  ) v ON v.dia = (COALESCE(p_data_inicio, (now() - interval '30 day')::date) + i)::date
-  ORDER BY 1 DESC;
+    COALESCE(p_data_inicio, (now()::date - interval '30 day')::date) AS di,
+    COALESCE(p_data_fim, now()::date) AS df
+),
+series AS (
+  SELECT generate_series((SELECT di FROM bounds), (SELECT df FROM bounds), interval '1 day')::date AS dia
+),
+agg AS (
+  SELECT
+    (COALESCE(data_venda, created_at))::date AS dia,
+    COUNT(*) AS qtd,
+    COALESCE(SUM(valor_total), 0) AS total
+  FROM public.vendas
+  WHERE (p_data_inicio IS NULL OR (COALESCE(data_venda, created_at))::date >= p_data_inicio)
+    AND (p_data_fim    IS NULL OR (COALESCE(data_venda, created_at))::date <= p_data_fim)
+    AND (p_tipo_pagamento IS NULL OR tipo_pagamento = p_tipo_pagamento)
+  GROUP BY 1
+)
+SELECT
+  s.dia,
+  COALESCE(a.qtd, 0)::int        AS qtd_vendas,
+  COALESCE(a.total, 0)::numeric  AS valor_total,
+  CASE WHEN COALESCE(a.qtd, 0) > 0 THEN COALESCE(a.total, 0) / a.qtd ELSE 0 END AS ticket_medio
+FROM series s
+LEFT JOIN agg a ON a.dia = s.dia
+ORDER BY s.dia DESC;
 $$;
 
 -- ============================================================

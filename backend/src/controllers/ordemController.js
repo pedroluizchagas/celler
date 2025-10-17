@@ -10,12 +10,26 @@ class OrdemController {
       const { extractPaginationParams, createPaginatedResponse } = require('../utils/pagination')
       const supabase = require('../utils/supabase')
 
+      // Normalizar status vindo da UI (ex.: "em andamento" -> "em_andamento")
+      const normalizeStatus = (s) => {
+        if (!s) return null
+        const normalized = String(s)
+          .toLowerCase()
+          .trim()
+          .normalize('NFD')
+          .replace(/\p{Diacritic}/gu, '')
+          .replace(/\s+/g, '_')
+        const allowed = ['aguardando','em_andamento','aguardando_peca','pronto','entregue','cancelado']
+        return allowed.includes(normalized) ? normalized : null
+      }
+      const statusNorm = normalizeStatus(status)
+
       // Extrair parâmetros de paginação
       const pagination = extractPaginationParams(req.query, { defaultLimit: 15, maxLimit: 100 })
 
       // Contagem total com filtros
       let countQuery = supabase.client.from('ordens').select('*', { count: 'exact', head: true })
-      if (status) countQuery = countQuery.eq('status', status)
+      if (statusNorm) countQuery = countQuery.eq('status', statusNorm)
       if (cliente_id) countQuery = countQuery.eq('cliente_id', parseInt(cliente_id))
       if (prioridade) countQuery = countQuery.eq('prioridade', prioridade)
       if (tecnico) countQuery = countQuery.ilike('tecnico_responsavel', `%${tecnico}%`)
@@ -34,7 +48,7 @@ class OrdemController {
           clientes:clientes (nome, telefone, email)
         `)
 
-      if (status) dataQuery = dataQuery.eq('status', status)
+      if (statusNorm) dataQuery = dataQuery.eq('status', statusNorm)
       if (cliente_id) dataQuery = dataQuery.eq('cliente_id', parseInt(cliente_id))
       if (prioridade) dataQuery = dataQuery.eq('prioridade', prioridade)
       if (tecnico) dataQuery = dataQuery.ilike('tecnico_responsavel', `%${tecnico}%`)
@@ -345,47 +359,121 @@ class OrdemController {
       const now = new Date()
       const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1)
 
-      const [totalOrdens, totalClientes, resumoMesArr, resumoDiaArr, prioridadeMesArr, ordensRecentes, tecnicosAtivos] = await Promise.all([
-        db.count('ordens'),
-        db.count('clientes'),
-        db.rpc('dashboard_resumo_mes', { desde: fmt(inicioMes) }),
-        db.rpc('dashboard_resumo_do_dia', { data: fmt(now) }),
-        db.rpc('dashboard_prioridade_mes', { desde: fmt(inicioMes) }),
-        db.rpc('dashboard_ordens_recentes', { lim: 10 }),
-        db.rpc('dashboard_tecnicos_ativos', { desde: fmt(inicioMes), lim: 5 }),
-      ])
+      try {
+        const [totalOrdens, totalClientes, resumoMesArr, resumoDiaArr, prioridadeMesArr, ordensRecentes, tecnicosAtivos] = await Promise.all([
+          db.count('ordens'),
+          db.count('clientes'),
+          db.rpc('dashboard_resumo_mes', { desde: fmt(inicioMes) }),
+          db.rpc('dashboard_resumo_do_dia', { data: fmt(now) }),
+          db.rpc('dashboard_prioridade_mes', { desde: fmt(inicioMes) }),
+          db.rpc('dashboard_ordens_recentes', { lim: 10 }),
+          db.rpc('dashboard_tecnicos_ativos', { desde: fmt(inicioMes), lim: 5 }),
+        ])
 
-      const resumoMes = Array.isArray(resumoMesArr) ? (resumoMesArr[0] || {}) : (resumoMesArr || {})
-      const statusArray = [
-        { status: 'aguardando', total: resumoMes.aguardando || 0 },
-        { status: 'em_andamento', total: resumoMes.em_andamento || 0 },
-        { status: 'aguardando_peca', total: resumoMes.aguardando_peca || 0 },
-        { status: 'pronto', total: resumoMes.pronto || 0 },
-        { status: 'entregue', total: resumoMes.entregue || 0 },
-        { status: 'cancelado', total: resumoMes.cancelado || 0 },
-      ]
+        const resumoMes = Array.isArray(resumoMesArr) ? (resumoMesArr[0] || {}) : (resumoMesArr || {})
+        const statusArray = [
+          { status: 'aguardando', total: resumoMes.aguardando || 0 },
+          { status: 'em_andamento', total: resumoMes.em_andamento || 0 },
+          { status: 'aguardando_peca', total: resumoMes.aguardando_peca || 0 },
+          { status: 'pronto', total: resumoMes.pronto || 0 },
+          { status: 'entregue', total: resumoMes.entregue || 0 },
+          { status: 'cancelado', total: resumoMes.cancelado || 0 },
+        ]
 
-      const prioridadeArray = Array.isArray(prioridadeMesArr) ? prioridadeMesArr.map((r) => ({ prioridade: r.prioridade, total: r.total })) : []
+        const prioridadeArray = Array.isArray(prioridadeMesArr) ? prioridadeMesArr.map((r) => ({ prioridade: r.prioridade, total: r.total })) : []
 
-      res.json({
-        success: true,
-        data: {
-          totais: {
-            ordens: totalOrdens || 0,
-            clientes: totalClientes || 0,
-            faturamento: resumoMes.valor_total || 0,
-            faturamento_entregue: resumoMes.valor_entregue || 0,
-            faturamento_pendente: resumoMes.valor_pendente || 0,
-            resumo_dia: Array.isArray(resumoDiaArr) ? (resumoDiaArr[0] || null) : (resumoDiaArr || null),
+        return res.json({
+          success: true,
+          data: {
+            totais: {
+              ordens: totalOrdens || 0,
+              clientes: totalClientes || 0,
+              faturamento: resumoMes.valor_total || 0,
+              faturamento_entregue: resumoMes.valor_entregue || 0,
+              faturamento_pendente: resumoMes.valor_pendente || 0,
+              resumo_dia: Array.isArray(resumoDiaArr) ? (resumoDiaArr[0] || null) : (resumoDiaArr || null),
+            },
+            breakdown: {
+              status: statusArray,
+              prioridade: prioridadeArray,
+            },
+            ordensRecentes: Array.isArray(ordensRecentes) ? ordensRecentes : [],
+            tecnicosAtivos: Array.isArray(tecnicosAtivos) ? tecnicosAtivos : [],
           },
-          breakdown: {
-            status: statusArray,
-            prioridade: prioridadeArray,
+        })
+      } catch (rpcErr) {
+        // Fallback sem RPCs: computa estatísticas básicas direto nas tabelas
+        const supabase = require('../utils/supabase')
+
+        const [totalOrdens, totalClientes] = await Promise.all([
+          supabase.count('ordens'),
+          supabase.count('clientes'),
+        ])
+
+        // Status breakdown
+        let statusArray = []
+        try {
+          const statusStats = await supabase.getOrdensStats()
+          const allowed = ['aguardando', 'em_andamento', 'aguardando_peca', 'pronto', 'entregue', 'cancelado']
+          statusArray = allowed.map((s) => ({
+            status: s,
+            total: (statusStats.find((x) => x.status === s) || {}).total || 0,
+          }))
+        } catch (_) { /* ignore */ }
+
+        // Faturamento (total/entregue/pendente)
+        let faturamento = 0, faturamento_entregue = 0, faturamento_pendente = 0
+        try {
+          const fat = await supabase.getFaturamentoStats()
+          faturamento = fat.total || 0
+          faturamento_entregue = fat.entregue || 0
+          faturamento_pendente = fat.pendente || 0
+        } catch (_) { /* ignore */ }
+
+        // Resumo do dia simplificado (total de ordens e valor_total do dia)
+        let resumo_dia = null
+        try {
+          const hoje = fmt(now)
+          const amanhaDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+          const amanha = fmt(amanhaDate)
+          const { data: rows, error } = await supabase.client
+            .from('ordens')
+            .select('status, valor_final, data_entrada')
+            .gte('data_entrada', `${hoje}T00:00:00.000Z`)
+            .lt('data_entrada', `${amanha}T00:00:00.000Z`)
+          if (!error && Array.isArray(rows)) {
+            const total_ordens = rows.length
+            const valor_total = rows.reduce((sum, r) => sum + (parseFloat(r.valor_final) || 0), 0)
+            resumo_dia = { total_ordens, valor_total }
+          }
+        } catch (_) { /* ignore */ }
+
+        // Ordens recentes e técnicos ativos
+        let ordensRecentes = []
+        let tecnicosAtivos = []
+        try { ordensRecentes = await supabase.getOrdensWithClientes(10) } catch (_) { /* ignore */ }
+        try { tecnicosAtivos = await supabase.getTecnicosStats() } catch (_) { /* ignore */ }
+
+        return res.json({
+          success: true,
+          data: {
+            totais: {
+              ordens: totalOrdens || 0,
+              clientes: totalClientes || 0,
+              faturamento,
+              faturamento_entregue,
+              faturamento_pendente,
+              resumo_dia,
+            },
+            breakdown: {
+              status: statusArray,
+              prioridade: [],
+            },
+            ordensRecentes: Array.isArray(ordensRecentes) ? ordensRecentes : [],
+            tecnicosAtivos: Array.isArray(tecnicosAtivos) ? tecnicosAtivos : [],
           },
-          ordensRecentes: Array.isArray(ordensRecentes) ? ordensRecentes : [],
-          tecnicosAtivos: Array.isArray(tecnicosAtivos) ? tecnicosAtivos : [],
-        },
-      })
+        })
+      }
     } catch (error) {
       const { respondWithError } = require('../utils/http-error')
       return respondWithError(res, error, 'Erro ao buscar estatísticas')

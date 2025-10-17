@@ -936,26 +936,25 @@ class ProdutoController {
   // Estatísticas do estoque
   async stats(req, res) {
     try {
-      // Usar queries simples compatíveis com Supabase
-      let produtos = []
-      let movimentacoes = []
+      const supabase = require('../utils/supabase')
 
-      try {
-        // Buscar produtos usando query simples
-        produtos = await db.all('SELECT * FROM produtos')
-        produtos = produtos.filter(p => p.ativo === 1 || p.ativo === true)
-      } catch (prodError) {
-        LoggerManager.warn('Erro ao buscar produtos:', prodError.message)
-        produtos = []
-      }
+      // Buscar produtos ativos (Supabase, sem SQL cru)
+      const { data: produtosRows, error: prodErr } = await supabase.client
+        .from('produtos')
+        .select('id, estoque_atual, estoque_minimo, estoque_maximo, preco_custo, preco_venda, ativo, updated_at')
+        .eq('ativo', true)
+      if (prodErr) throw prodErr
+      const produtos = produtosRows || []
 
-      try {
-        // Buscar movimentações usando query simples
-        movimentacoes = await db.all('SELECT * FROM movimentacoes_estoque')
-      } catch (movError) {
-        LoggerManager.warn('Tabela movimentacoes_estoque não encontrada:', movError.message)
-        movimentacoes = []
+      // Buscar movimentações (pelo menos campos usados)
+      const { data: movRows, error: movErr } = await supabase.client
+        .from('movimentacoes_estoque')
+        .select('id, tipo, quantidade, created_at, data_movimentacao')
+      if (movErr) {
+        const { LoggerManager } = require('../utils/logger')
+        LoggerManager.warn('Tabela movimentacoes_estoque não encontrada:', movErr.message)
       }
+      const movimentacoes = movRows || []
 
       // Calcular estatísticas básicas
       const totalProdutos = produtos.length
@@ -981,7 +980,6 @@ class ProdutoController {
       // Calcular movimentações do mês
       const agora = new Date()
       const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1)
-      
       const movimentacoesMes = movimentacoes.filter(m => {
         const dataMovimentacao = new Date(m.created_at || m.data_movimentacao)
         return dataMovimentacao >= inicioMes
@@ -1008,26 +1006,16 @@ class ProdutoController {
           margem_potencial: Math.round((valorVenda - valorCusto) * 100) / 100,
         },
         movimentacoes: {
-          total_mes: totalMovimentacoes,
-          entradas_mes: entradas,
-          saidas_mes: saidas,
+          total_movimentacoes: totalMovimentacoes,
+          entradas,
+          saidas,
         },
-        mais_vendidos: [], // Simplificado por enquanto
       }
 
-      LoggerManager.info('Estatísticas do estoque consultadas')
-
-      res.json({
-        success: true,
-        data: estatisticas,
-      })
+      res.json({ success: true, data: estatisticas })
     } catch (error) {
-      LoggerManager.error('Erro ao buscar estatísticas:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-        details: error.message
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao calcular estatísticas de estoque')
     }
   }
 }

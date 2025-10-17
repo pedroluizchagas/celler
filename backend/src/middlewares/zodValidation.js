@@ -19,6 +19,19 @@ const dateRangeSchema = z.object({
   ate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 })
 
+// Aceitar valores boolean-like vindos como string ("true","false","1","0") ou boolean
+const booleanLike = z.preprocess((v) => {
+  if (typeof v === 'string') {
+    const lower = v.toLowerCase().trim()
+    if (lower === 'true' || lower === '1') return true
+    if (lower === 'false' || lower === '0') return false
+    return v
+  }
+  if (v === 1) return true
+  if (v === 0) return false
+  return v
+}, z.boolean())
+
 // Schema para filtros de ordens
 const ordensFilterSchema = paginationSchema.extend({
   status: z.enum(['aberta', 'andamento', 'concluida', 'entregue']).optional(),
@@ -32,8 +45,8 @@ const produtosFilterSchema = paginationSchema.extend({
   categoria: z.string().min(1).max(100).optional(),
   categoria_id: z.coerce.number().int().positive().optional(),
   tipo: z.enum(['peca', 'servico']).optional(),
-  estoque_baixo: z.enum(['1', 'true', 'false', '0']).optional(),
-  ativo: z.enum(['true', 'false', '1', '0']).optional(),
+  estoque_baixo: booleanLike.optional(),
+  ativo: booleanLike.optional(),
   fornecedor_id: z.coerce.number().int().positive().optional(),
 })
 
@@ -54,7 +67,7 @@ const financeiroFilterSchema = paginationSchema.extend({
 // Schema para filtros de categorias
 const categoriasFilterSchema = paginationSchema.extend({
   tipo: z.enum(['produto', 'servico']).optional(),
-  ativo: z.enum(['true', 'false', '1', '0']).optional(),
+  ativo: booleanLike.optional(),
 })
 
 // Schema para estatísticas/dashboard

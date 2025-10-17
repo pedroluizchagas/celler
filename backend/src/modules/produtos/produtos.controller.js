@@ -50,7 +50,8 @@ async function listProdutos(req, res) {
       filtros.tipo = tipo
     }
 
-    if (estoque_baixo === 'true' || estoque_baixo === '1') {
+    // aceitar booleano direto ou strings 'true'/'1'
+    if (estoque_baixo === true || estoque_baixo === 'true' || estoque_baixo === '1') {
       filtros.estoque_baixo = true
     }
 

@@ -16,74 +16,73 @@ class FinanceiroController {
       } = req.query
 
       const { extractPaginationParams, createPaginatedResponse } = require('../utils/pagination')
+      const supabase = require('../utils/supabase')
 
       // Extrair parâmetros de paginação
       const pagination = extractPaginationParams(req.query, { defaultLimit: 25, maxLimit: 100 })
 
-      let whereClause = '1=1'
-      let params = []
+      // 1) Contagem
+      let countQ = supabase.client.from('fluxo_caixa').select('*', { count: 'exact', head: true })
+      if (dataInicio) countQ = countQ.gte('data_movimentacao', dataInicio)
+      if (dataFim) countQ = countQ.lte('data_movimentacao', dataFim)
+      if (tipo) countQ = countQ.eq('tipo', tipo)
+      if (categoria) countQ = countQ.eq('categoria_id', parseInt(categoria))
+      if (formaPagamento) countQ = countQ.eq('forma_pagamento', formaPagamento)
+      const { count, error: countErr } = await countQ
+      if (countErr) throw countErr
+      const total = count || 0
 
-      // Aplicar filtros
-      if (dataInicio) {
-        whereClause += ' AND fc.data_movimentacao >= ?'
-        params.push(dataInicio)
-      }
-      if (dataFim) {
-        whereClause += ' AND fc.data_movimentacao <= ?'
-        params.push(dataFim)
-      }
-      if (tipo) {
-        whereClause += ' AND fc.tipo = ?'
-        params.push(tipo)
-      }
-      if (categoria) {
-        whereClause += ' AND fc.categoria_id = ?'
-        params.push(categoria)
-      }
-      if (formaPagamento) {
-        whereClause += ' AND fc.forma_pagamento = ?'
-        params.push(formaPagamento)
-      }
+      // 2) Dados com ordenação determinística
+      const offset = pagination.offset
+      let dataQ = supabase.client
+        .from('fluxo_caixa')
+        .select('id, tipo, valor, categoria_id, descricao, data_movimentacao, origem_tipo, origem_id, usuario, cliente_id, forma_pagamento, created_at, venda_id, conta_pagar_id, conta_receber_id')
+      if (dataInicio) dataQ = dataQ.gte('data_movimentacao', dataInicio)
+      if (dataFim) dataQ = dataQ.lte('data_movimentacao', dataFim)
+      if (tipo) dataQ = dataQ.eq('tipo', tipo)
+      if (categoria) dataQ = dataQ.eq('categoria_id', parseInt(categoria))
+      if (formaPagamento) dataQ = dataQ.eq('forma_pagamento', formaPagamento)
 
-      // Query base para dados
-      const baseQuery = `
-        SELECT 
-          fc.*,
-          cf.nome as categoria_nome,
-          cf.tipo as categoria_tipo,
-          c.nome as cliente_nome,
-          CASE 
-            WHEN fc.ordem_id IS NOT NULL THEN 'Ordem de Serviço'
-            WHEN fc.venda_id IS NOT NULL THEN 'Venda Direta'
-            WHEN fc.conta_pagar_id IS NOT NULL THEN 'Conta a Pagar'
-            WHEN fc.conta_receber_id IS NOT NULL THEN 'Conta a Receber'
-            ELSE 'Manual'
-          END as origem
-        FROM fluxo_caixa fc
-        LEFT JOIN categorias_financeiras cf ON fc.categoria_id = cf.id
-        LEFT JOIN clientes c ON fc.cliente_id = c.id
-        WHERE ${whereClause}
-      `
+      dataQ = dataQ.order('data_movimentacao', { ascending: false }).order('id', { ascending: false }).range(offset, offset + pagination.limit - 1)
 
-      // Executar query de contagem
-      const totalResult = await db.get(
-        `SELECT COUNT(*) as total FROM fluxo_caixa fc WHERE ${whereClause}`,
-        params
-      )
+      const { data, error } = await dataQ
+      if (error) throw error
 
-      // Adicionar ORDER BY determinístico e paginação
-      const dataQuery = baseQuery + 
-        ' ORDER BY fc.data_movimentacao DESC, fc.id DESC' + 
-        ` LIMIT ${pagination.limit} OFFSET ${pagination.offset}`
-
-      // Executar query de dados
-      const movimentacoes = await db.all(dataQuery, params)
-
-      // Retornar resposta paginada
-      res.json(createPaginatedResponse(movimentacoes, totalResult.total, pagination.page, pagination.limit))
+      res.json(createPaginatedResponse(data || [], total, pagination.page, pagination.limit))
     } catch (error) {
       const { respondWithError } = require('../utils/http-error')
       return respondWithError(res, error, 'Erro ao listar fluxo de caixa')
+    }
+  }
+
+  // ==================== CATEGORIAS FINANCEIRAS ====================
+
+  // Listar categorias financeiras
+  async listarCategorias(req, res) {
+    try {
+      const { tipo } = req.query
+      const supabase = require('../utils/supabase')
+
+      let q = supabase.client
+        .from('categorias_financeiras')
+        .select('id, nome, tipo, descricao, cor, ativo, created_at, updated_at')
+        .eq('ativo', true)
+      if (tipo) q = q.eq('tipo', tipo)
+      q = q.order('tipo', { ascending: true }).order('nome', { ascending: true })
+
+      const { data, error } = await q
+      if (error) throw error
+
+      res.json({
+        success: true,
+        data: data || [],
+      })
+    } catch (error) {
+      LoggerManager.error('Erro ao listar categorias financeiras', error)
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+      })
     }
   }
 

@@ -6,25 +6,49 @@ class CategoriaController {
   async index(req, res) {
     try {
       const { ativo = '1' } = req.query
+      const supabase = require('../utils/supabase')
 
-      const categorias = await db.all(
-        `
-        SELECT 
-          c.*,
-          COUNT(p.id) as total_produtos
-        FROM categorias c
-        LEFT JOIN produtos p ON c.id = p.categoria_id AND p.ativo = 1
-        WHERE c.ativo = ?
-        GROUP BY c.id
-        ORDER BY c.nome ASC
-      `,
-        [ativo === '1' ? 1 : 0]
-      )
+      // 1) Buscar categorias (Supabase, sem SQL cru)
+      const ativoBool = ativo === '1' || ativo === true
+      const { data: categoriasRows, error: catErr } = await supabase.client
+        .from('categorias')
+        .select('id, nome, descricao, icone, ativo, created_at, updated_at')
+        .eq('ativo', ativoBool)
+        .order('nome', { ascending: true })
+      if (catErr) throw catErr
+
+      const categorias = categoriasRows || []
+      const ids = categorias.map(c => c.id)
+
+      // 2) Contagem de produtos por categoria (ativo=true)
+      let totalPorCategoria = {}
+      if (ids.length) {
+        const { data: produtosRows, error: prodErr } = await supabase.client
+          .from('produtos')
+          .select('id, categoria_id, ativo')
+          .in('categoria_id', ids)
+        if (prodErr) {
+          LoggerManager.warn('Falha ao contar produtos por categoria:', prodErr.message)
+        } else {
+          totalPorCategoria = produtosRows
+            .filter(p => p.ativo === true || p.ativo === 1)
+            .reduce((acc, p) => {
+              acc[p.categoria_id] = (acc[p.categoria_id] || 0) + 1
+              return acc
+            }, {})
+        }
+      }
+
+      // 3) Montar resposta com total_produtos
+      const out = categorias.map(c => ({
+        ...c,
+        total_produtos: totalPorCategoria[c.id] || 0,
+      }))
 
       res.json({
         success: true,
-        data: categorias,
-        total: categorias.length,
+        data: out,
+        total: out.length,
       })
     } catch (error) {
       const { respondWithError } = require('../utils/http-error')
@@ -36,13 +60,15 @@ class CategoriaController {
   async show(req, res) {
     try {
       const { id } = req.params
+      const supabase = require('../utils/supabase')
 
-      const categoria = await db.get(
-        `
-        SELECT * FROM categorias WHERE id = ?
-      `,
-        [id]
-      )
+      const { data: catRows, error: catErr } = await supabase.client
+        .from('categorias')
+        .select('*')
+        .eq('id', parseInt(id))
+        .limit(1)
+      if (catErr) throw catErr
+      const categoria = (catRows || [])[0]
 
       if (!categoria) {
         return res.status(404).json({
@@ -51,22 +77,19 @@ class CategoriaController {
         })
       }
 
-      // Buscar produtos da categoria
-      const produtos = await db.all(
-        `
-        SELECT id, nome, tipo, estoque_atual, estoque_minimo, preco_venda
-        FROM produtos 
-        WHERE categoria_id = ? AND ativo = 1
-        ORDER BY nome ASC
-      `,
-        [id]
-      )
+      const { data: produtos, error: prodErr } = await supabase.client
+        .from('produtos')
+        .select('id, nome, tipo, estoque_atual, estoque_minimo, preco_venda, ativo')
+        .eq('categoria_id', parseInt(id))
+        .eq('ativo', true)
+        .order('nome', { ascending: true })
+      if (prodErr) throw prodErr
 
       res.json({
         success: true,
         data: {
           ...categoria,
-          produtos,
+          produtos: produtos || [],
         },
       })
     } catch (error) {

@@ -79,104 +79,77 @@ class OrdemController {
     }
   }
 
-  // Buscar ordem por ID com dados completos
+  // Buscar ordem por ID com dados completos (Supabase, sem SQL cru)
   async show(req, res) {
     try {
       const { id } = req.params
-      console.log(`🔍 Buscando ordem ID: ${id}`)
+      const supabase = require('../utils/supabase')
 
-      const ordem = await db.get(
-        `
-        SELECT 
-          o.id, o.cliente_id, o.equipamento, o.defeito_relatado as defeito, o.status, o.data_entrada,
-          o.created_at, o.updated_at,
-          COALESCE(o.modelo, '') as modelo,
-          COALESCE(o.prioridade, 'normal') as prioridade,
-          COALESCE(o.valor_orcamento, 0) as valor_orcamento,
-          COALESCE(o.valor_final, 0) as valor_final,
-          o.data_previsao, o.data_conclusao, o.data_entrega,
-          COALESCE(o.tecnico_responsavel, '') as tecnico_responsavel,
-          COALESCE(o.observacoes, '') as observacoes,
-          c.nome as cliente_nome, c.telefone as cliente_telefone,
-          c.email as cliente_email, c.endereco as cliente_endereco, c.cidade as cliente_cidade
-        FROM ordens o
-        INNER JOIN clientes c ON o.cliente_id = c.id
-        WHERE o.id = ?
-      `,
-        [id]
-      )
-
-      if (!ordem) {
-        console.log(`❌ Ordem ${id} não encontrada`)
-        return res.status(404).json({
-          success: false,
-          error: 'Ordem de serviço não encontrada',
-        })
+      // Ordem + cliente (via relação)
+      const { data: ordensRows, error: ordErr } = await supabase.client
+        .from('ordens')
+        .select(`
+          id, cliente_id, equipamento, defeito_relatado, status, data_entrada,
+          created_at, updated_at, modelo, prioridade, valor_orcamento, valor_final,
+          data_previsao, data_conclusao, data_entrega, tecnico_responsavel, observacoes,
+          clientes:clientes (nome, telefone, email, endereco, cidade)
+        `)
+        .eq('id', parseInt(id))
+        .limit(1)
+      if (ordErr) throw ordErr
+      const o = (ordensRows || [])[0]
+      if (!o) {
+        return res.status(404).json({ success: false, error: 'Ordem de serviço não encontrada' })
       }
 
-      console.log(`✅ Ordem encontrada: ${JSON.stringify(ordem, null, 2)}`)
+      // Entidades relacionadas
+      const [fotosRes, pecasRes, servicosRes, histRes] = await Promise.all([
+        supabase.client.from('ordem_fotos').select('id, nome_arquivo, caminho, created_at').eq('ordem_id', parseInt(id)).order('created_at', { ascending: true }),
+        supabase.client.from('ordem_pecas').select('id, nome_peca, codigo_peca, quantidade, valor_unitario, valor_total, fornecedor, observacoes, created_at').eq('ordem_id', parseInt(id)).order('created_at', { ascending: true }),
+        supabase.client.from('ordem_servicos').select('id, descricao_servico, tempo_gasto, valor_servico, tecnico, data_execucao, observacoes').eq('ordem_id', parseInt(id)).order('data_execucao', { ascending: true }),
+        supabase.client.from('ordem_historico').select('id, status_anterior, status_novo, observacoes, usuario, data_alteracao').eq('ordem_id', parseInt(id)).order('data_alteracao', { ascending: false }),
+      ])
 
-      // Buscar fotos da ordem
-      const fotos = await db.all(
-        `
-        SELECT id, nome_arquivo, caminho, created_at
-        FROM ordem_fotos 
-        WHERE ordem_id = ?
-        ORDER BY created_at ASC
-      `,
-        [id]
-      )
-
-      // Buscar peças utilizadas
-      const pecas = await db.all(
-        `
-        SELECT id, nome_peca, codigo_peca, quantidade, valor_unitario, 
-               valor_total, fornecedor, observacoes, created_at
-        FROM ordem_pecas 
-        WHERE ordem_id = ?
-        ORDER BY created_at ASC
-      `,
-        [id]
-      )
-
-      // Buscar serviços realizados
-      const servicos = await db.all(
-        `
-        SELECT id, descricao_servico, tempo_gasto, valor_servico, 
-               tecnico, data_execucao, observacoes
-        FROM ordem_servicos 
-        WHERE ordem_id = ?
-        ORDER BY data_execucao ASC
-      `,
-        [id]
-      )
-
-      // Buscar histórico de alterações
-      const historico = await db.all(
-        `
-        SELECT id, status_anterior, status_novo, observacoes, 
-               usuario, data_alteracao
-        FROM ordem_historico 
-        WHERE ordem_id = ?
-        ORDER BY data_alteracao DESC
-      `,
-        [id]
-      )
+      const fotos = fotosRes.data || []
+      const pecas = pecasRes.data || []
+      const servicos = servicosRes.data || []
+      const historico = histRes.data || []
 
       res.json({
         success: true,
         data: {
-          ...ordem,
+          id: o.id,
+          cliente_id: o.cliente_id,
+          equipamento: o.equipamento,
+          defeito: o.defeito_relatado,
+          status: o.status,
+          data_entrada: o.data_entrada,
+          created_at: o.created_at,
+          updated_at: o.updated_at,
+          modelo: o.modelo || '',
+          prioridade: o.prioridade || 'normal',
+          valor_orcamento: o.valor_orcamento || 0,
+          valor_final: o.valor_final || 0,
+          data_previsao: o.data_previsao,
+          data_conclusao: o.data_conclusao,
+          data_entrega: o.data_entrega,
+          tecnico_responsavel: o.tecnico_responsavel || '',
+          observacoes: o.observacoes || '',
+          cliente_nome: o.clientes?.nome || null,
+          cliente_telefone: o.clientes?.telefone || null,
+          cliente_email: o.clientes?.email || null,
+          cliente_endereco: o.clientes?.endereco || null,
+          cliente_cidade: o.clientes?.cidade || null,
           fotos,
           pecas,
           servicos,
           historico,
         },
       })
-      } catch (error) {
-        const { respondWithError } = require('../utils/http-error')
-        return respondWithError(res, error, 'Erro ao buscar ordem')
-      }
+    } catch (error) {
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Erro ao buscar ordem')
+    }
   }
 
   // Criar nova ordem

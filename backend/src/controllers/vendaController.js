@@ -2,69 +2,65 @@ const db = require('../utils/database-adapter')
 const { LoggerManager } = require('../utils/logger')
 
 class VendaController {
-  // Listar todas as vendas com paginação determinística
+  // Listar todas as vendas com paginação determinística (Supabase, sem SQL cru)
   async index(req, res) {
     try {
       const { data_inicio, data_fim, cliente_id } = req.query
       const { extractPaginationParams, createPaginatedResponse } = require('../utils/pagination')
+      const supabase = require('../utils/supabase')
 
       // Extrair parâmetros de paginação
       const pagination = extractPaginationParams(req.query, { defaultLimit: 20, maxLimit: 100 })
 
-      // Query base para dados
-      let baseQuery = `
-        SELECT 
-          v.*,
-          c.nome as cliente_nome,
-          c.telefone as cliente_telefone,
-          COUNT(vi.id) as total_itens
-        FROM vendas v
-        LEFT JOIN clientes c ON v.cliente_id = c.id
-        LEFT JOIN venda_itens vi ON v.id = vi.venda_id
-        WHERE 1=1
-      `
+      // Contagem com filtros
+      let countQ = supabase.client.from('vendas').select('*', { count: 'exact', head: true })
+      if (data_inicio) countQ = countQ.gte('data_venda', `${data_inicio} 00:00:00`)
+      if (data_fim) countQ = countQ.lte('data_venda', `${data_fim} 23:59:59`)
+      if (cliente_id) countQ = countQ.eq('cliente_id', parseInt(cliente_id))
+      const { count, error: countErr } = await countQ
+      if (countErr) throw countErr
+      const total = count || 0
 
-      // Query para contagem
-      let countQuery = 'SELECT COUNT(*) as total FROM vendas v WHERE 1=1'
-      
-      const params = []
-      const countParams = []
+      // Dados com cliente relacionado
+      let dataQ = supabase.client
+        .from('vendas')
+        .select(`
+          id, numero_venda, data_venda, valor_total, tipo_pagamento, desconto, cliente_id,
+          clientes:clientes (nome, telefone)
+        `)
+      if (data_inicio) dataQ = dataQ.gte('data_venda', `${data_inicio} 00:00:00`)
+      if (data_fim) dataQ = dataQ.lte('data_venda', `${data_fim} 23:59:59`)
+      if (cliente_id) dataQ = dataQ.eq('cliente_id', parseInt(cliente_id))
 
-      // Aplicar filtros
-      if (data_inicio) {
-        baseQuery += ' AND DATE(v.data_venda) >= ?'
-        countQuery += ' AND DATE(v.data_venda) >= ?'
-        params.push(data_inicio)
-        countParams.push(data_inicio)
+      const offset = pagination.offset
+      dataQ = dataQ.order('data_venda', { ascending: false }).order('id', { ascending: false }).range(offset, offset + pagination.limit - 1)
+      const { data, error } = await dataQ
+      if (error) throw error
+
+      const vendasBase = data || []
+
+      // Contar itens por venda em lote
+      const vendaIds = vendasBase.map(v => v.id)
+      let itensCountMap = {}
+      if (vendaIds.length > 0) {
+        const { data: itensRows, error: itensErr } = await supabase.client
+          .from('venda_itens')
+          .select('venda_id')
+          .in('venda_id', vendaIds)
+        if (itensErr) throw itensErr
+        itensCountMap = (itensRows || []).reduce((acc, row) => {
+          acc[row.venda_id] = (acc[row.venda_id] || 0) + 1
+          return acc
+        }, {})
       }
 
-      if (data_fim) {
-        baseQuery += ' AND DATE(v.data_venda) <= ?'
-        countQuery += ' AND DATE(v.data_venda) <= ?'
-        params.push(data_fim)
-        countParams.push(data_fim)
-      }
+      const vendas = vendasBase.map(v => ({
+        ...v,
+        cliente_nome: v.clientes?.nome || null,
+        cliente_telefone: v.clientes?.telefone || null,
+        total_itens: itensCountMap[v.id] || 0,
+      }))
 
-      if (cliente_id) {
-        baseQuery += ' AND v.cliente_id = ?'
-        countQuery += ' AND v.cliente_id = ?'
-        params.push(cliente_id)
-        countParams.push(cliente_id)
-      }
-
-      // Executar query de contagem
-      const { total } = await db.get(countQuery, countParams)
-
-      // Adicionar GROUP BY, ORDER BY determinístico e paginação
-      const dataQuery = baseQuery + 
-        ' GROUP BY v.id' +
-        ' ORDER BY v.data_venda DESC, v.id DESC' + 
-        ` LIMIT ${pagination.limit} OFFSET ${pagination.offset}`
-
-      // Executar query de dados
-      const vendas = await db.all(dataQuery, params)
-
-      // Retornar resposta paginada
       res.json(createPaginatedResponse(vendas, total, pagination.page, pagination.limit))
     } catch (error) {
       const { respondWithError } = require('../utils/http-error')

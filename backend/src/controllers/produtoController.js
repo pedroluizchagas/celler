@@ -70,65 +70,77 @@ class ProdutoController {
     }
   }
 
-  // Buscar produto por ID
+  // Buscar produto por ID (compatível com Supabase, sem SQL cru)
   async show(req, res) {
     try {
       const { id } = req.params
+      const supabase = require('../utils/supabase')
 
-      const produto = await db.get(
-        `
-        SELECT 
-          p.*,
-          c.nome as categoria_nome,
-          f.nome as fornecedor_nome,
-          f.telefone as fornecedor_telefone
-        FROM produtos p
-        LEFT JOIN categorias c ON p.categoria_id = c.id
-        LEFT JOIN fornecedores f ON p.fornecedor_id = f.id
-        WHERE p.id = ?
-      `,
-        [id]
-      )
+      // Produto base
+      const { data: produtos, error: prodErr } = await supabase.client
+        .from('produtos')
+        .select('*')
+        .eq('id', parseInt(id))
+        .limit(1)
+
+      if (prodErr) throw prodErr
+      const produto = (produtos || [])[0]
 
       if (!produto) {
-        return res.status(404).json({
-          success: false,
-          error: 'Produto não encontrado',
-        })
+        return res.status(404).json({ success: false, error: 'Produto não encontrado' })
       }
 
-      // Buscar histórico de movimentações
-      const movimentacoes = await db.all(
-        `
-        SELECT 
-          tipo, quantidade, quantidade_anterior, quantidade_atual,
-          preco_unitario, valor_total, motivo, observacoes,
-          data_movimentacao, usuario, referencia_tipo, referencia_id
-        FROM movimentacoes_estoque 
-        WHERE produto_id = ?
-        ORDER BY data_movimentacao DESC
-        LIMIT 50
-      `,
-        [id]
-      )
+      // Enriquecer com categoria/fornecedor, se disponíveis
+      let categoria_nome = null
+      let fornecedor_nome = null
+      let fornecedor_telefone = null
 
-      // Buscar alertas ativos
-      const alertas = await db.all(
-        `
-        SELECT tipo, data_alerta 
-        FROM alertas_estoque 
-        WHERE produto_id = ? AND ativo = 1
-        ORDER BY data_alerta DESC
-      `,
-        [id]
-      )
+      if (produto.categoria_id) {
+        const { data: catRows } = await supabase.client
+          .from('categorias')
+          .select('nome')
+          .eq('id', produto.categoria_id)
+          .limit(1)
+        categoria_nome = (catRows && catRows[0] && catRows[0].nome) || null
+      }
+
+      if (produto.fornecedor_id) {
+        const { data: fornRows } = await supabase.client
+          .from('fornecedores')
+          .select('nome, telefone')
+          .eq('id', produto.fornecedor_id)
+          .limit(1)
+        fornecedor_nome = (fornRows && fornRows[0] && fornRows[0].nome) || null
+        fornecedor_telefone = (fornRows && fornRows[0] && fornRows[0].telefone) || null
+      }
+
+      // Histórico de movimentações (limite 50)
+      const { data: movimentacoesRows, error: movErr } = await supabase.client
+        .from('movimentacoes_estoque')
+        .select('tipo, quantidade, quantidade_anterior, quantidade_atual, preco_unitario, valor_total, motivo, observacoes, data_movimentacao, usuario, referencia_tipo, referencia_id')
+        .eq('produto_id', parseInt(id))
+        .order('data_movimentacao', { ascending: false })
+        .limit(50)
+      if (movErr) throw movErr
+
+      // Alertas ativos
+      const { data: alertasRows, error: alertasErr } = await supabase.client
+        .from('alertas_estoque')
+        .select('tipo, data_alerta')
+        .eq('produto_id', parseInt(id))
+        .eq('ativo', true)
+        .order('data_alerta', { ascending: false })
+      if (alertasErr) throw alertasErr
 
       res.json({
         success: true,
         data: {
           ...produto,
-          movimentacoes,
-          alertas,
+          categoria_nome,
+          fornecedor_nome,
+          fornecedor_telefone,
+          movimentacoes: movimentacoesRows || [],
+          alertas: alertasRows || [],
         },
       })
     } catch (error) {

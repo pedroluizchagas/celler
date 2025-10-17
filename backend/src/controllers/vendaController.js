@@ -124,280 +124,219 @@ class VendaController {
     }
   }
 
-  // Criar nova venda
+  // Criar nova venda (Supabase, sem SQL cru)
   async store(req, res) {
     try {
-      const { cliente_id, tipo_pagamento, desconto, observacoes, itens } =
-        req.body
-
+      const { cliente_id, tipo_pagamento, desconto, observacoes, itens } = req.body
       if (!itens || !Array.isArray(itens) || itens.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'É necessário informar pelo menos um item',
-        })
+        return res.status(400).json({ success: false, error: 'É necessário informar pelo menos um item' })
       }
 
-      // Gerar número da venda
-      const ultimaVenda = await db.get(
-        'SELECT MAX(id) as ultimo_id FROM vendas'
-      )
-      const numeroVenda = `VD${String(
-        (ultimaVenda.ultimo_id || 0) + 1
-      ).padStart(6, '0')}`
+      const supabase = require('../utils/supabase')
 
-      // Validar itens e calcular total
+      // Gerar número da venda com base no último id
+      const { data: lastRows, error: lastErr } = await supabase.client
+        .from('vendas')
+        .select('id')
+        .order('id', { ascending: false })
+        .limit(1)
+      if (lastErr) throw lastErr
+      const lastId = (lastRows && lastRows[0] && lastRows[0].id) || 0
+      const numeroVenda = `VD${String((lastId || 0) + 1).padStart(6, '0')}`
+
+      // Validar itens e calcular totais
       let valorTotal = 0
       const itensValidados = []
-
       for (const item of itens) {
-        const produto = await db.get(
-          'SELECT * FROM produtos WHERE id = ? AND ativo = 1',
-          [item.produto_id]
-        )
-        if (!produto) {
-          return res.status(400).json({
-            success: false,
-            error: `Produto ID ${item.produto_id} não encontrado`,
-          })
+        const { data: produto, error: prodErr } = await supabase.client
+          .from('produtos')
+          .select('*')
+          .eq('id', item.produto_id)
+          .eq('ativo', true)
+          .single()
+        if (prodErr || !produto) {
+          return res.status(400).json({ success: false, error: `Produto ID ${item.produto_id} não encontrado` })
         }
-
-        if (produto.estoque_atual < item.quantidade) {
-          return res.status(400).json({
-            success: false,
-            error: `Estoque insuficiente para ${produto.nome}. Disponível: ${produto.estoque_atual}`,
-          })
+        if ((produto.estoque_atual || 0) < item.quantidade) {
+          return res.status(400).json({ success: false, error: `Estoque insuficiente para ${produto.nome}. Disponível: ${produto.estoque_atual}` })
         }
-
-        const precoUnitario = item.preco_unitario || produto.preco_venda
+        const precoUnitario = item.preco_unitario || produto.preco_venda || 0
         const precoTotal = precoUnitario * item.quantidade
-
         itensValidados.push({
           produto_id: item.produto_id,
           quantidade: item.quantidade,
           preco_unitario: precoUnitario,
           preco_total: precoTotal,
-          produto: produto,
+          produto,
         })
-
         valorTotal += precoTotal
       }
 
-      // Aplicar desconto
       const descontoValor = desconto || 0
       valorTotal -= descontoValor
-
       if (valorTotal < 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'Desconto não pode ser maior que o valor total',
-        })
+        return res.status(400).json({ success: false, error: 'Desconto não pode ser maior que o valor total' })
       }
 
       // Criar venda
-      const resultadoVenda = await db.run(
-        `
-        INSERT INTO vendas (cliente_id, numero_venda, tipo_pagamento, desconto, valor_total, observacoes)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `,
-        [
-          cliente_id || null,
-          numeroVenda,
-          tipo_pagamento,
-          descontoValor,
-          valorTotal,
-          observacoes?.trim(),
-        ]
-      )
+      const { data: vendaRow, error: vendaErr } = await supabase.client
+        .from('vendas')
+        .insert([
+          {
+            cliente_id: cliente_id || null,
+            numero_venda: numeroVenda,
+            tipo_pagamento,
+            desconto: descontoValor,
+            valor_total: valorTotal,
+            observacoes: (observacoes || '').trim() || null,
+          },
+        ])
+        .select()
+        .single()
+      if (vendaErr) throw vendaErr
 
-      // Criar itens da venda
+      // Criar itens + movimentações + atualizar estoque e alertas
       for (const item of itensValidados) {
-        await db.run(
-          `
-          INSERT INTO venda_itens (venda_id, produto_id, quantidade, preco_unitario, preco_total)
-          VALUES (?, ?, ?, ?, ?)
-        `,
-          [
-            resultadoVenda.id,
-            item.produto_id,
-            item.quantidade,
-            item.preco_unitario,
-            item.preco_total,
-          ]
-        )
-
-        // Movimentar estoque - inserção direta
-        await db.run(
-          `
-          INSERT INTO movimentacoes_estoque (
-            produto_id, tipo, quantidade, quantidade_anterior, quantidade_atual,
-            preco_unitario, valor_total, motivo, observacoes, usuario,
-            referencia_id, referencia_tipo
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-          [
-            item.produto_id,
-            'saida',
-            item.quantidade,
-            item.produto.estoque_atual,
-            item.produto.estoque_atual - item.quantidade,
-            item.preco_unitario || 0,
-            item.preco_total || 0,
-            'venda',
-            `Venda ${numeroVenda}`,
-            'system',
-            resultadoVenda.id,
-            'venda',
-          ]
-        )
-
-        // Atualizar estoque
-        await db.run(
-          'UPDATE produtos SET estoque_atual = estoque_atual - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-          [item.quantidade, item.produto_id]
-        )
-
-        // Verificar alertas de estoque - inserção direta
-        const produtoAtualizado = await db.get(
-          'SELECT * FROM produtos WHERE id = ?',
-          [item.produto_id]
-        )
-
-        if (produtoAtualizado) {
-          // Remover alertas antigos
-          await db.run('DELETE FROM alertas_estoque WHERE produto_id = ?', [
-            item.produto_id,
+        // venda_itens
+        const { error: itemErr } = await supabase.client
+          .from('venda_itens')
+          .insert([
+            {
+              venda_id: vendaRow.id,
+              produto_id: item.produto_id,
+              quantidade: item.quantidade,
+              preco_unitario: item.preco_unitario,
+              preco_total: item.preco_total,
+            },
           ])
+        if (itemErr) throw itemErr
 
-          // Verificar estoque baixo
-          if (
-            produtoAtualizado.estoque_atual <= produtoAtualizado.estoque_minimo
-          ) {
-            const tipo =
-              produtoAtualizado.estoque_atual === 0
-                ? 'estoque_zerado'
-                : 'estoque_baixo'
-            const mensagem = 
-              produtoAtualizado.estoque_atual === 0 
-                ? `Produto ${produtoAtualizado.nome} está com estoque zerado após venda`
-                : `Produto ${produtoAtualizado.nome} está com estoque baixo após venda (${produtoAtualizado.estoque_atual} unidades)`
-            await db.run(
-              `INSERT INTO alertas_estoque (produto_id, tipo, mensagem) VALUES (?, ?, ?)`,
-              [item.produto_id, tipo, mensagem]
-            )
-          }
+        const quantidadeAnterior = item.produto.estoque_atual || 0
+        const quantidadeAtual = quantidadeAnterior - item.quantidade
+
+        // movimentacoes_estoque
+        const { error: movErr } = await supabase.client
+          .from('movimentacoes_estoque')
+          .insert([
+            {
+              produto_id: item.produto_id,
+              tipo: 'saida',
+              quantidade: item.quantidade,
+              quantidade_anterior: quantidadeAnterior,
+              quantidade_atual: quantidadeAtual,
+              preco_unitario: item.preco_unitario || 0,
+              valor_total: item.preco_total || 0,
+              motivo: 'venda',
+              observacoes: `Venda ${numeroVenda}`,
+              usuario: 'system',
+              referencia_id: vendaRow.id,
+              referencia_tipo: 'venda',
+            },
+          ])
+        if (movErr) throw movErr
+
+        // Atualizar estoque do produto
+        const { error: updErr } = await supabase.client
+          .from('produtos')
+          .update({ estoque_atual: quantidadeAtual })
+          .eq('id', item.produto_id)
+        if (updErr) throw updErr
+
+        // Alertas de estoque
+        if (quantidadeAtual <= (item.produto.estoque_minimo || 0)) {
+          // Remove alertas antigos e insere o atual
+          await supabase.client.from('alertas_estoque').delete().eq('produto_id', item.produto_id)
+          const tipo = quantidadeAtual === 0 ? 'estoque_zerado' : 'estoque_baixo'
+          const mensagem =
+            quantidadeAtual === 0
+              ? `Produto ${item.produto.nome} está com estoque zerado após venda`
+              : `Produto ${item.produto.nome} está com estoque baixo após venda (${quantidadeAtual} unidades)`
+          await supabase.client
+            .from('alertas_estoque')
+            .insert([{ produto_id: item.produto_id, tipo, mensagem, ativo: true }])
         }
       }
 
       LoggerManager.audit('VENDA_CRIADA', 'system', {
-        vendaId: resultadoVenda.id,
-        numeroVenda: numeroVenda,
-        valorTotal: valorTotal,
-        totalItens: itens.length,
+        vendaId: vendaRow.id,
+        numeroVenda,
+        valorTotal,
+        totalItens: itensValidados.length,
       })
 
-      // Integração com módulo financeiro
+      // Integração financeira
       try {
-        // Criar conta a receber se não for pagamento à vista
+        const hoje = new Date().toISOString().split('T')[0]
         if (tipo_pagamento !== 'dinheiro') {
-          await db.run(
-            `
-            INSERT INTO contas_receber (
-              descricao, valor, cliente_id, venda_id, data_vencimento,
-              numero_documento, observacoes, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          `,
-            [
-              `Venda ${numeroVenda}`,
-              valorTotal,
-              cliente_id || null,
-              resultadoVenda.id,
-              new Date().toISOString().split('T')[0], // Vencimento hoje para cartão/pix
-              numeroVenda,
-              observacoes || null,
-              'pendente',
-            ]
-          )
+          await supabase.client.from('contas_receber').insert([
+            {
+              descricao: `Venda ${numeroVenda}`,
+              valor: valorTotal,
+              cliente_id: cliente_id || null,
+              venda_id: vendaRow.id,
+              data_vencimento: hoje,
+              numero_documento: numeroVenda,
+              observacoes: observacoes || null,
+              status: 'pendente',
+            },
+          ])
         } else {
-          // Para pagamento à vista, registrar direto no fluxo de caixa
-          await db.run(
-            `
-            INSERT INTO fluxo_caixa (
-              tipo, valor, descricao, cliente_id, venda_id,
-              forma_pagamento, data_movimentacao, observacoes, usuario
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `,
-            [
-              'entrada',
-              valorTotal,
-              `Venda ${numeroVenda}`,
-              cliente_id || null,
-              resultadoVenda.id,
-              tipo_pagamento,
-              new Date().toISOString().split('T')[0],
-              observacoes || null,
-              'system',
-            ]
-          )
+          await supabase.client.from('fluxo_caixa').insert([
+            {
+              tipo: 'entrada',
+              valor: valorTotal,
+              descricao: `Venda ${numeroVenda}`,
+              cliente_id: cliente_id || null,
+              venda_id: vendaRow.id,
+              forma_pagamento: tipo_pagamento,
+              data_movimentacao: hoje,
+              observacoes: observacoes || null,
+              usuario: 'system',
+            },
+          ])
         }
-
-        LoggerManager.info('Integração financeira da venda criada', {
-          vendaId: resultadoVenda.id,
-          tipo_pagamento,
-          valorTotal,
-        })
-      } catch (error) {
-        LoggerManager.error('Erro na integração financeira da venda:', error)
-        // Não falha a venda por erro na integração financeira
+      } catch (finErr) {
+        LoggerManager.error('Erro na integração financeira da venda:', finErr)
       }
 
-      const novaVenda = await db.get('SELECT * FROM vendas WHERE id = ?', [
-        resultadoVenda.id,
-      ])
-
-      res.status(201).json({
-        success: true,
-        message: 'Venda realizada com sucesso',
-        data: novaVenda,
-      })
+      res.status(201).json({ success: true, message: 'Venda realizada com sucesso', data: vendaRow })
     } catch (error) {
       const { respondWithError } = require('../utils/http-error')
       return respondWithError(res, error, 'Erro ao criar venda')
     }
   }
 
-  // Estatísticas por período com tratamento robusto
+  // Estatísticas por período com tratamento robusto (Supabase)
   async estatisticasPorPeriodo(req, res) {
     try {
       const { de = null, ate = null } = req.query
-      
-      // Usar defaults seguros se não fornecidos
+      const supabase = require('../utils/supabase')
+
       const dataInicio = de || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       const dataFim = ate || new Date().toISOString().split('T')[0]
 
-      const { data, error } = await db.query(`
-        SELECT
-          date_trunc('day', v.data_venda)::date AS dia,
-          COUNT(*)::int AS qtd_vendas,
-          COALESCE(SUM(v.valor_total), 0)::numeric AS total
-        FROM vendas v
-        WHERE v.data_venda::date BETWEEN $1::date AND $2::date
-        GROUP BY 1
-        ORDER BY 1
-      `, [dataInicio, dataFim])
+      let q = supabase.client
+        .from('vendas')
+        .select('data_venda, valor_total')
+        .gte('data_venda', `${dataInicio} 00:00:00`)
+        .lte('data_venda', `${dataFim} 23:59:59`)
 
+      const { data: rows, error } = await q
       if (error) throw error
 
-      res.json({
-        success: true,
-        data: data || [],
-        periodo: { de: dataInicio, ate: dataFim }
-      })
+      const byDay = {}
+      for (const r of rows || []) {
+        const dia = (r.data_venda || '').slice(0, 10)
+        if (!byDay[dia]) byDay[dia] = { dia, qtd_vendas: 0, total: 0 }
+        byDay[dia].qtd_vendas += 1
+        byDay[dia].total += Number(r.valor_total || 0)
+      }
+      const data = Object.values(byDay).sort((a, b) => a.dia.localeCompare(b.dia))
+
+      res.json({ success: true, data, periodo: { de: dataInicio, ate: dataFim } })
     } catch (error) {
       LoggerManager.error('Erro ao buscar estatísticas por período:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      res.status(500).json({ success: false, error: 'Erro interno do servidor' })
     }
   }
 

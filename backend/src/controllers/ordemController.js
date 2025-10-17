@@ -152,7 +152,7 @@ class OrdemController {
     }
   }
 
-  // Criar nova ordem (Supabase, sem SQL cru)
+  // Criar nova ordem (RPC transacional quando disponível, fallback Supabase)
   async store(req, res) {
     try {
       const supabase = require('../utils/supabase')
@@ -172,12 +172,24 @@ class OrdemController {
         tecnico_responsavel,
       } = req.body
 
-      // Validações básicas
       if (!cliente_id || !equipamento || !defeito) {
         return res.status(400).json({ success: false, error: 'Cliente, equipamento e defeito são obrigatórios' })
       }
 
-      // Validar cliente
+      try {
+        const payload = {
+          cliente_id, equipamento, marca, modelo, numero_serie, defeito,
+          observacoes, status, prioridade, valor_orcamento, valor_final,
+          data_previsao, tecnico_responsavel, pecas: req.body.pecas || [], servicos: req.body.servicos || []
+        }
+        const ordem = await db.rpc('ordens_criar', { p_payload: payload })
+        if (ordem) {
+          return res.status(201).json({ success: true, message: 'Ordem de serviço criada com sucesso', data: ordem })
+        }
+      } catch (_) {
+        // segue para fallback
+      }
+
       const { data: clienteRow, error: cliErr } = await supabase.client
         .from('clientes')
         .select('id')
@@ -187,141 +199,50 @@ class OrdemController {
         return res.status(400).json({ success: false, error: 'Cliente não encontrado' })
       }
 
-      // Parse peças e serviços
       let pecas = []
       let servicos = []
-      try {
-        if (req.body.pecas) {
-          if (typeof req.body.pecas === 'string') pecas = JSON.parse(req.body.pecas)
-          else if (Array.isArray(req.body.pecas)) pecas = req.body.pecas
-        }
-      } catch { pecas = [] }
-      try {
-        if (req.body.servicos) {
-          if (typeof req.body.servicos === 'string') servicos = JSON.parse(req.body.servicos)
-          else if (Array.isArray(req.body.servicos)) servicos = req.body.servicos
-        }
-      } catch { servicos = [] }
+      try { if (req.body.pecas) { if (typeof req.body.pecas === 'string') pecas = JSON.parse(req.body.pecas); else if (Array.isArray(req.body.pecas)) pecas = req.body.pecas } } catch { pecas = [] }
+      try { if (req.body.servicos) { if (typeof req.body.servicos === 'string') servicos = JSON.parse(req.body.servicos); else if (Array.isArray(req.body.servicos)) servicos = req.body.servicos } } catch { servicos = [] }
       pecas = pecas.filter((p) => p && p.nome_peca && p.nome_peca.trim())
       servicos = servicos.filter((s) => s && s.descricao_servico && s.descricao_servico.trim())
 
-      // Criar ordem
       const { data: ordemRow, error: insErr } = await supabase.client
         .from('ordens')
-        .insert([
-          {
-            cliente_id: parseInt(cliente_id),
-            equipamento,
-            marca: marca || null,
-            modelo: modelo || null,
-            numero_serie: numero_serie || null,
-            defeito_relatado: defeito,
-            observacoes: observacoes || null,
-            status,
-            prioridade,
-            valor_orcamento: valor_orcamento || null,
-            valor_final: valor_final || null,
-            data_previsao: data_previsao || null,
-            tecnico_responsavel: tecnico_responsavel || null,
-          },
-        ])
+        .insert([{ cliente_id: parseInt(cliente_id), equipamento, marca: marca || null, modelo: modelo || null, numero_serie: numero_serie || null, defeito_relatado: defeito, observacoes: observacoes || null, status, prioridade, valor_orcamento: valor_orcamento || null, valor_final: valor_final || null, data_previsao: data_previsao || null, tecnico_responsavel: tecnico_responsavel || null }])
         .select()
         .single()
       if (insErr) throw insErr
 
       const ordemId = ordemRow.id
 
-      // Inserir peças
       for (const p of pecas) {
         const valorTotal = (parseFloat(p.quantidade) || 0) * (parseFloat(p.valor_unitario) || 0)
-        const { error } = await supabase.client.from('ordem_pecas').insert([
-          {
-            ordem_id: ordemId,
-            nome_peca: p.nome_peca,
-            codigo_peca: p.codigo_peca || null,
-            quantidade: p.quantidade || 1,
-            valor_unitario: p.valor_unitario || null,
-            valor_total: valorTotal,
-            fornecedor: p.fornecedor || null,
-            observacoes: p.observacoes || null,
-          },
-        ])
+        const { error } = await supabase.client.from('ordem_pecas').insert([{ ordem_id: ordemId, nome_peca: p.nome_peca, codigo_peca: p.codigo_peca || null, quantidade: p.quantidade || 1, valor_unitario: p.valor_unitario || null, valor_total: valorTotal, fornecedor: p.fornecedor || null, observacoes: p.observacoes || null }])
         if (error) throw error
       }
 
-      // Inserir serviços
       for (const s of servicos) {
-        const { error } = await supabase.client.from('ordem_servicos').insert([
-          {
-            ordem_id: ordemId,
-            descricao_servico: s.descricao_servico,
-            tempo_gasto: s.tempo_gasto || null,
-            valor_servico: s.valor_servico || null,
-            tecnico: s.tecnico || tecnico_responsavel || null,
-            observacoes: s.observacoes || null,
-          },
-        ])
+        const { error } = await supabase.client.from('ordem_servicos').insert([{ ordem_id: ordemId, descricao_servico: s.descricao_servico, tempo_gasto: s.tempo_gasto || null, valor_servico: s.valor_servico || null, tecnico: s.tecnico || tecnico_responsavel || null, observacoes: s.observacoes || null }])
         if (error) throw error
       }
 
-      // Histórico inicial
-      await supabase.client.from('ordem_historico').insert([
-        {
-          ordem_id: ordemId,
-          status_novo: status,
-          observacoes: 'Ordem de serviço criada',
-          usuario: 'Sistema',
-        },
-      ])
+      await supabase.client.from('ordem_historico').insert([{ ordem_id: ordemId, status_novo: status, observacoes: 'Ordem de serviço criada', usuario: 'Sistema' }])
 
-      // Fotos (se houver)
       if (req.files && req.files.length > 0) {
         for (const file of req.files) {
-          await supabase.client.from('ordem_fotos').insert([
-            { ordem_id: ordemId, nome_arquivo: file.filename, caminho: file.path },
-          ])
+          await supabase.client.from('ordem_fotos').insert([{ ordem_id: ordemId, nome_arquivo: file.filename, caminho: file.path }])
         }
       }
 
-      // Buscar ordem com cliente
       const { data: ordensRows, error: selErr } = await supabase.client
         .from('ordens')
-        .select(`
-          id, cliente_id, equipamento, defeito_relatado, status, data_entrada,
-          created_at, updated_at, modelo, prioridade, valor_orcamento, valor_final,
-          data_previsao, data_conclusao, data_entrega, tecnico_responsavel, observacoes,
-          clientes:clientes (nome, telefone)
-        `)
+        .select(`id, cliente_id, equipamento, defeito_relatado, status, data_entrada, created_at, updated_at, modelo, prioridade, valor_orcamento, valor_final, data_previsao, data_conclusao, data_entrega, tecnico_responsavel, observacoes, clientes:clientes (nome, telefone)`)        
         .eq('id', ordemId)
         .limit(1)
       if (selErr) throw selErr
       const o = ordensRows && ordensRows[0]
 
-      res.status(201).json({
-        success: true,
-        message: 'Ordem de serviço criada com sucesso',
-        data: {
-          id: o.id,
-          cliente_id: o.cliente_id,
-          equipamento: o.equipamento,
-          defeito: o.defeito_relatado,
-          status: o.status,
-          data_entrada: o.data_entrada,
-          created_at: o.created_at,
-          updated_at: o.updated_at,
-          modelo: o.modelo || '',
-          prioridade: o.prioridade || 'normal',
-          valor_orcamento: o.valor_orcamento || 0,
-          valor_final: o.valor_final || 0,
-          data_previsao: o.data_previsao,
-          data_conclusao: o.data_conclusao,
-          data_entrega: o.data_entrega,
-          tecnico_responsavel: o.tecnico_responsavel || '',
-          observacoes: o.observacoes || '',
-          cliente_nome: o.clientes?.nome || null,
-          cliente_telefone: o.clientes?.telefone || null,
-        },
-      })
+      res.status(201).json({ success: true, message: 'Ordem de serviço criada com sucesso', data: { id: o.id, cliente_id: o.cliente_id, equipamento: o.equipamento, defeito: o.defeito_relatado, status: o.status, data_entrada: o.data_entrada, created_at: o.created_at, updated_at: o.updated_at, modelo: o.modelo || '', prioridade: o.prioridade || 'normal', valor_orcamento: o.valor_orcamento || 0, valor_final: o.valor_final || 0, data_previsao: o.data_previsao, data_conclusao: o.data_conclusao, data_entrega: o.data_entrega, tecnico_responsavel: o.tecnico_responsavel || '', observacoes: o.observacoes || '', cliente_nome: o.clientes?.nome || null, cliente_telefone: o.clientes?.telefone || null } })
     } catch (error) {
       console.error('Erro ao criar ordem:', error)
       res.status(500).json({ success: false, error: 'Erro interno do servidor: ' + error.message })

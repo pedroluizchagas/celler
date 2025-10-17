@@ -29,6 +29,10 @@ function loadSqlFiles() {
   const localFix = path.join(__dirname, '..', 'migrations', 'fix_dashboard_and_products.sql')
   if (fs.existsSync(localFix)) files.push(localFix)
 
+  // Alinhamento com SQL-run (diferenças de schema)
+  const align = path.join(__dirname, '..', 'migrations', 'align_sqlrun_schema.sql')
+  if (fs.existsSync(align)) files.push(align)
+
   // Migrations da pasta supabase (dashboard/views)
   const mig4 = path.join(__dirname, '..', '..', 'supabase', 'migrations', '0004_dashboard_rpcs_views.sql')
   const mig5 = path.join(__dirname, '..', '..', 'supabase', 'migrations', '0005_dashboard_more_rpcs.sql')

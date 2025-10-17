@@ -42,6 +42,9 @@ const vendasRoutes = require('./routes/vendas')
 
 const financeiroRoutes = require('./routes/financeiro')
 
+// Importar middleware de normalização de query
+const { normalizeQuery } = require('./middlewares/normalizeQuery')
+
 const app = express()
 
 const PORT = process.env.PORT || 3001
@@ -119,6 +122,9 @@ const requestIdMiddleware = require('./middlewares/request-id')
 // Middleware para registrar mutaÃ§Ãµes via logger estruturado
 
 app.use(mutationLogger)
+
+// Aplicar normalização de query globalmente
+app.use(normalizeQuery)
 
 // Pasta de uploads
 
@@ -210,22 +216,20 @@ app.use('/api/vendas', vendasRoutes)
 
 app.use('/api/financeiro', financeiroRoutes)
 
+// Healthchecks e rotas raiz (Render health-check HEAD /)
+app.get('/healthz', (_req, res) => res.status(200).json({ status: 'ok', service: 'assistencia-tecnica-backend' }))
+app.get('/readyz', (_req, res) => res.status(200).json({ ready: true }))
+app.get('/', (_req, res) => res.status(200).send('Assistência Técnica API'))
+app.head('/', (_req, res) => res.sendStatus(200))
+
 // WhatsApp removido - todas as rotas desabilitadas
-
 app.all('/api/whatsapp/*', (req, res) => {
-
   res.status(410).json({
-
     success: false,
-
     error: 'WhatsApp foi removido do sistema',
-
     code: 'WHATSAPP_REMOVED',
-
     message: 'As funcionalidades do WhatsApp foram permanentemente desabilitadas'
-
   })
-
 })
 
 // Importar middleware de tratamento de erros aprimorado

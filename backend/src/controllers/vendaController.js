@@ -369,6 +369,42 @@ class VendaController {
     }
   }
 
+  // Estatísticas por período com tratamento robusto
+  async estatisticasPorPeriodo(req, res) {
+    try {
+      const { de = null, ate = null } = req.query
+      
+      // Usar defaults seguros se não fornecidos
+      const dataInicio = de || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      const dataFim = ate || new Date().toISOString().split('T')[0]
+
+      const { data, error } = await db.query(`
+        SELECT
+          date_trunc('day', v.data_venda)::date AS dia,
+          COUNT(*)::int AS qtd_vendas,
+          COALESCE(SUM(v.valor_total), 0)::numeric AS total
+        FROM vendas v
+        WHERE v.data_venda::date BETWEEN $1::date AND $2::date
+        GROUP BY 1
+        ORDER BY 1
+      `, [dataInicio, dataFim])
+
+      if (error) throw error
+
+      res.json({
+        success: true,
+        data: data || [],
+        periodo: { de: dataInicio, ate: dataFim }
+      })
+    } catch (error) {
+      LoggerManager.error('Erro ao buscar estatísticas por período:', error)
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+      })
+    }
+  }
+
   // Estatísticas do PDV/Dashboard
   async estatisticas(req, res) {
     try {

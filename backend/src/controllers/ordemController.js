@@ -490,6 +490,218 @@ class OrdemController {
       res.status(500).json({ success: false, error: 'Erro interno do servidor' })
     }
   }
+
+  // Atualizar ordem (RPC transacional quando disponível, fallback Supabase)
+  async update(req, res) {
+    try {
+      const supabase = require('../utils/supabase')
+      const { id } = req.params
+      const {
+        equipamento,
+        marca,
+        modelo,
+        numero_serie,
+        defeito,
+        observacoes,
+        status,
+        prioridade,
+        valor_orcamento,
+        valor_final,
+        data_previsao,
+        data_conclusao,
+        data_entrega,
+        tecnico_responsavel,
+        pecas: pecasIn,
+        servicos: servicosIn,
+      } = req.body
+
+      // 1) Tentar via RPC transacional
+      try {
+        const payload = {
+          equipamento,
+          marca,
+          modelo,
+          numero_serie,
+          defeito,
+          observacoes,
+          status,
+          prioridade,
+          valor_orcamento,
+          valor_final,
+          data_previsao,
+          data_conclusao,
+          data_entrega,
+          tecnico_responsavel,
+          pecas: pecasIn || [],
+          servicos: servicosIn || [],
+        }
+        const rpcResult = await db.rpc('ordens_atualizar', { p_id: parseInt(id), p_payload: payload })
+        if (rpcResult) {
+          // Buscar versão enriquecida para devolver à UI
+          const { data: rows } = await supabase.client
+            .from('ordens')
+            .select(`
+              id, cliente_id, equipamento, defeito_relatado, status, data_entrada,
+              created_at, updated_at, modelo, prioridade, valor_orcamento, valor_final,
+              data_previsao, data_conclusao, data_entrega, tecnico_responsavel, observacoes,
+              clientes:clientes (nome, telefone)
+            `)
+            .eq('id', parseInt(id))
+            .limit(1)
+          const o = rows && rows[0]
+          return res.json({
+            success: true,
+            message: 'Ordem de serviço atualizada com sucesso',
+            data: {
+              id: o.id,
+              cliente_id: o.cliente_id,
+              equipamento: o.equipamento,
+              defeito: o.defeito_relatado,
+              status: o.status,
+              data_entrada: o.data_entrada,
+              created_at: o.created_at,
+              updated_at: o.updated_at,
+              modelo: o.modelo || '',
+              prioridade: o.prioridade || 'normal',
+              valor_orcamento: o.valor_orcamento || 0,
+              valor_final: o.valor_final || 0,
+              data_previsao: o.data_previsao,
+              data_conclusao: o.data_conclusao,
+              data_entrega: o.data_entrega,
+              tecnico_responsavel: o.tecnico_responsavel || '',
+              observacoes: o.observacoes || '',
+              cliente_nome: o.clientes?.nome || null,
+              cliente_telefone: o.clientes?.telefone || null,
+            },
+          })
+        }
+      } catch (_) {
+        // segue para fallback
+      }
+
+      // 2) Fallback: lógica Supabase já consolidada
+      const { data: ordemExistente, error: ordErr } = await supabase.client
+        .from('ordens')
+        .select('*')
+        .eq('id', parseInt(id))
+        .single()
+      if (ordErr || !ordemExistente) {
+        return res.status(404).json({ success: false, error: 'Ordem de serviço não encontrada' })
+      }
+
+      if (status && status !== ordemExistente.status) {
+        await supabase.client.from('ordem_historico').insert([
+          {
+            ordem_id: parseInt(id),
+            status_anterior: ordemExistente.status,
+            status_novo: status,
+            observacoes: `Status alterado de ${ordemExistente.status} para ${status}`,
+            usuario: 'Sistema',
+          },
+        ])
+      }
+
+      const { error: updErr } = await supabase.client
+        .from('ordens')
+        .update({
+          equipamento: equipamento?.trim() || ordemExistente.equipamento,
+          marca: marca || null,
+          modelo: modelo || null,
+          numero_serie: numero_serie || null,
+          defeito_relatado: defeito?.trim() || ordemExistente.defeito_relatado,
+          observacoes: observacoes?.trim() || null,
+          status: status || ordemExistente.status,
+          prioridade: prioridade || ordemExistente.prioridade,
+          valor_orcamento: valor_orcamento || null,
+          valor_final: valor_final || null,
+          data_previsao: data_previsao || null,
+          data_conclusao: data_conclusao || null,
+          data_entrega: data_entrega || null,
+          tecnico_responsavel: tecnico_responsavel?.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', parseInt(id))
+      if (updErr) throw updErr
+
+      await supabase.client.from('ordem_pecas').delete().eq('ordem_id', parseInt(id))
+      let pecas = []
+      try { if (typeof pecasIn === 'string') pecas = JSON.parse(pecasIn); else if (Array.isArray(pecasIn)) pecas = pecasIn } catch { pecas = [] }
+      for (const p of pecas || []) {
+        if (!p || !p.nome_peca) continue
+        const valorTotal = (parseFloat(p.quantidade) || 0) * (parseFloat(p.valor_unitario) || 0)
+        await supabase.client.from('ordem_pecas').insert([
+          {
+            ordem_id: parseInt(id),
+            nome_peca: p.nome_peca,
+            codigo_peca: p.codigo_peca || null,
+            quantidade: p.quantidade || 1,
+            valor_unitario: p.valor_unitario || null,
+            valor_total: valorTotal,
+            fornecedor: p.fornecedor || null,
+            observacoes: p.observacoes || null,
+          },
+        ])
+      }
+
+      await supabase.client.from('ordem_servicos').delete().eq('ordem_id', parseInt(id))
+      let servicos = []
+      try { if (typeof servicosIn === 'string') servicos = JSON.parse(servicosIn); else if (Array.isArray(servicosIn)) servicos = servicosIn } catch { servicos = [] }
+      for (const s of servicos || []) {
+        if (!s || !s.descricao_servico) continue
+        await supabase.client.from('ordem_servicos').insert([
+          {
+            ordem_id: parseInt(id),
+            descricao_servico: s.descricao_servico,
+            tempo_gasto: s.tempo_gasto || null,
+            valor_servico: s.valor_servico || null,
+            tecnico: s.tecnico || tecnico_responsavel || null,
+            observacoes: s.observacoes || null,
+          },
+        ])
+      }
+
+      const { data: rows } = await supabase.client
+        .from('ordens')
+        .select(`
+          id, cliente_id, equipamento, defeito_relatado, status, data_entrada,
+          created_at, updated_at, modelo, prioridade, valor_orcamento, valor_final,
+          data_previsao, data_conclusao, data_entrega, tecnico_responsavel, observacoes,
+          clientes:clientes (nome, telefone)
+        `)
+        .eq('id', parseInt(id))
+        .limit(1)
+      const o = rows && rows[0]
+
+      res.json({
+        success: true,
+        message: 'Ordem de serviço atualizada com sucesso',
+        data: {
+          id: o.id,
+          cliente_id: o.cliente_id,
+          equipamento: o.equipamento,
+          defeito: o.defeito_relatado,
+          status: o.status,
+          data_entrada: o.data_entrada,
+          created_at: o.created_at,
+          updated_at: o.updated_at,
+          modelo: o.modelo || '',
+          prioridade: o.prioridade || 'normal',
+          valor_orcamento: o.valor_orcamento || 0,
+          valor_final: o.valor_final || 0,
+          data_previsao: o.data_previsao,
+          data_conclusao: o.data_conclusao,
+          data_entrega: o.data_entrega,
+          tecnico_responsavel: o.tecnico_responsavel || '',
+          observacoes: o.observacoes || '',
+          cliente_nome: o.clientes?.nome || null,
+          cliente_telefone: o.clientes?.telefone || null,
+        },
+      })
+    } catch (error) {
+      console.error('Erro ao atualizar ordem:', error)
+      res.status(500).json({ success: false, error: 'Erro interno do servidor: ' + error.message })
+    }
+  }
 }
 
 module.exports = new OrdemController()

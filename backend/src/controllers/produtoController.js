@@ -769,27 +769,64 @@ class ProdutoController {
     }
   }
 
-  // Obter alertas de estoque
+  // Obter alertas de estoque (compatível com Supabase)
   async alertas(req, res) {
     try {
-      const alertas = await db.all(`
-        SELECT 
-          a.*,
-          p.nome as produto_nome,
-          p.estoque_atual,
-          p.estoque_minimo,
-          c.nome as categoria_nome
-        FROM alertas_estoque a
-        JOIN produtos p ON a.produto_id = p.id
-        LEFT JOIN categorias c ON p.categoria_id = c.id
-        WHERE a.ativo = 1
-        ORDER BY a.data_alerta DESC
-      `)
+      const supabase = require('../utils/supabase')
+
+      // Buscar alertas ativos
+      const { data: alertasRows, error: alertasErr } = await supabase.client
+        .from('alertas_estoque')
+        .select('id, produto_id, tipo, mensagem, data_alerta, ativo')
+        .eq('ativo', true)
+        .order('data_alerta', { ascending: false })
+
+      if (alertasErr) throw alertasErr
+
+      const produtoIds = Array.from(new Set((alertasRows || []).map(a => a.produto_id).filter(Boolean)))
+      let produtosMap = {}
+      let categoriasMap = {}
+
+      if (produtoIds.length > 0) {
+        const { data: produtosRows, error: prodErr } = await supabase.client
+          .from('produtos')
+          .select('id, nome, estoque_atual, estoque_minimo, categoria_id')
+          .in('id', produtoIds)
+        if (prodErr) throw prodErr
+        produtosMap = Object.fromEntries((produtosRows || []).map(p => [p.id, p]))
+
+        const categoriaIds = Array.from(new Set((produtosRows || []).map(p => p.categoria_id).filter(Boolean)))
+        if (categoriaIds.length > 0) {
+          const { data: categoriasRows, error: catErr } = await supabase.client
+            .from('categorias')
+            .select('id, nome')
+            .in('id', categoriaIds)
+          if (catErr) throw catErr
+          categoriasMap = Object.fromEntries((categoriasRows || []).map(c => [c.id, c.nome]))
+        }
+      }
+
+      const alertas = (alertasRows || []).map(a => {
+        const p = produtosMap[a.produto_id] || {}
+        const categoriaNome = p.categoria_id ? (categoriasMap[p.categoria_id] || null) : null
+        return {
+          id: a.id,
+          produto_id: a.produto_id,
+          tipo: a.tipo,
+          mensagem: a.mensagem,
+          data_alerta: a.data_alerta,
+          ativo: a.ativo,
+          produto_nome: p.nome || null,
+          estoque_atual: p.estoque_atual || 0,
+          estoque_minimo: p.estoque_minimo || 0,
+          categoria_nome: categoriaNome,
+        }
+      })
 
       res.json({
         success: true,
-        data: alertas || [],
-        total: (alertas && alertas.length) || 0,
+        data: alertas,
+        total: alertas.length,
       })
     } catch (error) {
       const { respondWithError } = require('../utils/http-error')

@@ -3,83 +3,75 @@ const path = require('path')
 const fs = require('fs')
 
 class OrdemController {
-  // Listar todas as ordens com paginação determinística
+  // Listar todas as ordens com paginação determinística (compatível com Supabase)
   async index(req, res) {
     try {
-      const { status, cliente_id, prioridade, tecnico, page = 1, limit = 15 } = req.query
+      const { status, cliente_id, prioridade, tecnico } = req.query
       const { extractPaginationParams, createPaginatedResponse } = require('../utils/pagination')
+      const supabase = require('../utils/supabase')
 
       // Extrair parâmetros de paginação
       const pagination = extractPaginationParams(req.query, { defaultLimit: 15, maxLimit: 100 })
 
-      // Query base para dados
-      let baseQuery = `
-        SELECT 
-          o.id, o.cliente_id, o.equipamento, o.defeito_relatado as defeito, o.status, o.data_entrada,
-          o.created_at, o.updated_at,
-          COALESCE(o.modelo, '') as modelo,
-          COALESCE(o.prioridade, 'normal') as prioridade,
-          COALESCE(o.valor_orcamento, 0) as valor_orcamento,
-          COALESCE(o.valor_final, 0) as valor_final,
-          o.data_previsao, o.data_conclusao, o.data_entrega,
-          COALESCE(o.tecnico_responsavel, '') as tecnico_responsavel,
-          COALESCE(o.observacoes, '') as observacoes,
-          c.nome as cliente_nome, c.telefone as cliente_telefone, c.email as cliente_email
-        FROM ordens o
-        INNER JOIN clientes c ON o.cliente_id = c.id
-      `
+      // Contagem total com filtros
+      let countQuery = supabase.client.from('ordens').select('*', { count: 'exact', head: true })
+      if (status) countQuery = countQuery.eq('status', status)
+      if (cliente_id) countQuery = countQuery.eq('cliente_id', parseInt(cliente_id))
+      if (prioridade) countQuery = countQuery.eq('prioridade', prioridade)
+      if (tecnico) countQuery = countQuery.ilike('tecnico_responsavel', `%${tecnico}%`)
 
-      // Query para contagem
-      let countQuery = `
-        SELECT COUNT(*) as total
-        FROM ordens o
-        INNER JOIN clientes c ON o.cliente_id = c.id
-      `
+      const { count, error: countError } = await countQuery
+      if (countError) throw countError
+      const total = count || 0
 
-      const params = []
-      const conditions = []
+      // Dados com relações (cliente) e ordenação determinística
+      let dataQuery = supabase.client
+        .from('ordens')
+        .select(`
+          id, cliente_id, equipamento, defeito_relatado, status, data_entrada,
+          created_at, updated_at, modelo, prioridade, valor_orcamento, valor_final,
+          data_previsao, data_conclusao, data_entrega, tecnico_responsavel, observacoes,
+          clientes:clientes (nome, telefone, email)
+        `)
 
-      // Aplicar filtros
-      if (status) {
-        conditions.push('o.status = ?')
-        params.push(status)
-      }
+      if (status) dataQuery = dataQuery.eq('status', status)
+      if (cliente_id) dataQuery = dataQuery.eq('cliente_id', parseInt(cliente_id))
+      if (prioridade) dataQuery = dataQuery.eq('prioridade', prioridade)
+      if (tecnico) dataQuery = dataQuery.ilike('tecnico_responsavel', `%${tecnico}%`)
 
-      if (cliente_id) {
-        conditions.push('o.cliente_id = ?')
-        params.push(cliente_id)
-      }
+      const offset = pagination.offset
+      dataQuery = dataQuery
+        .order('data_entrada', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false })
+        .range(offset, offset + pagination.limit - 1)
 
-      if (prioridade) {
-        conditions.push('o.prioridade = ?')
-        params.push(prioridade)
-      }
+      const { data, error } = await dataQuery
+      if (error) throw error
 
-      if (tecnico) {
-        conditions.push('o.tecnico_responsavel LIKE ?')
-        params.push(`%${tecnico}%`)
-      }
+      // Mapear para a estrutura compatível com o frontend atual
+      const ordens = (data || []).map((o) => ({
+        id: o.id,
+        cliente_id: o.cliente_id,
+        equipamento: o.equipamento,
+        defeito: o.defeito_relatado,
+        status: o.status,
+        data_entrada: o.data_entrada,
+        created_at: o.created_at,
+        updated_at: o.updated_at,
+        modelo: o.modelo || '',
+        prioridade: o.prioridade || 'normal',
+        valor_orcamento: o.valor_orcamento || 0,
+        valor_final: o.valor_final || 0,
+        data_previsao: o.data_previsao,
+        data_conclusao: o.data_conclusao,
+        data_entrega: o.data_entrega,
+        tecnico_responsavel: o.tecnico_responsavel || '',
+        observacoes: o.observacoes || '',
+        cliente_nome: o.clientes?.nome || null,
+        cliente_telefone: o.clientes?.telefone || null,
+        cliente_email: o.clientes?.email || null,
+      }))
 
-      // Adicionar WHERE se há condições
-      if (conditions.length > 0) {
-        const whereClause = ' WHERE ' + conditions.join(' AND ')
-        baseQuery += whereClause
-        countQuery += whereClause
-      }
-
-      // Executar query de contagem
-      const totalResult = await db.get(countQuery, params)
-      const total = totalResult.total
-
-      // Adicionar ORDER BY determinístico e paginação
-      const dataQuery = baseQuery + 
-        ' ORDER BY o.data_entrada DESC, o.id DESC' + 
-        ` LIMIT ${pagination.limit} OFFSET ${pagination.offset}`
-
-      // Executar query de dados
-      const ordens = await db.all(dataQuery, params)
-
-      // Retornar resposta paginada
       res.json(createPaginatedResponse(ordens, total, pagination.page, pagination.limit))
     } catch (error) {
       const { respondWithError } = require('../utils/http-error')

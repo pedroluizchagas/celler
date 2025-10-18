@@ -138,3 +138,4 @@ Sistema desenvolvido especialmente para **Saymon Cell**.
 ---
 
 **© 2025 Saymon Cell - Assistência Técnica Especializada**
+# celler

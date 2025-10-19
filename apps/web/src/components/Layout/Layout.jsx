@@ -29,7 +29,6 @@ import {
   AccountBalance as AccountBalanceIcon,
   Backup as BackupIcon,
   AccountCircle as AccountCircleIcon,
-  Phone as PhoneIcon,
   Brightness4 as Brightness4Icon,
   Brightness7 as Brightness7Icon,
 } from '@mui/icons-material'
@@ -42,7 +41,7 @@ const drawerWidth = 280
 const Layout = ({ children }) => {
   const [mobileOpen, setMobileOpen] = useState(false)
   const { isDarkMode, toggleTheme } = useThemeMode()
-  const [customization] = useLocalStorage('celler.customization', { brandName: 'Celler' })
+  const [customization] = useLocalStorage('celler.customization', { brandName: 'Celler', logoDataUrl: '' })
   const [profile] = useLocalStorage('celler.profile', { name: 'Usuário' })
   const theme = useTheme()
   const location = useLocation()
@@ -84,7 +83,6 @@ const Layout = ({ children }) => {
         }}
       >
         <Box display="flex" alignItems="center" mb={1}>
-          <PhoneIcon sx={{ mr: 1, color: 'primary.main', fontSize: 28 }} />
           <Typography
             variant="h6"
             sx={{
@@ -261,7 +259,6 @@ const Layout = ({ children }) => {
           {/* Logo e Nome (Mobile) */}
           {isMobile && (
             <Box display="flex" alignItems="center" sx={{ flexGrow: 1 }}>
-              <PhoneIcon sx={{ mr: 1, color: 'primary.main', fontSize: 28 }} />
               <Typography
                 variant="h6"
                 component="span"

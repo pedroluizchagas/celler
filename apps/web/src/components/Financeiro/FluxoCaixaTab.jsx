@@ -65,8 +65,12 @@ const FluxoCaixaTab = ({ onRefresh }) => {
         financeiroService.listarCategorias(),
       ])
 
-      setMovimentacoes(movResponse.data || [])
-      setCategorias(catResponse.data || [])
+      // Normaliza formatos diferentes de resposta (array direto ou { data: [] })
+      const movs = movResponse?.data ?? movResponse ?? []
+      const cats = catResponse?.data ?? catResponse ?? []
+
+      setMovimentacoes(Array.isArray(movs) ? movs : movs.data ?? [])
+      setCategorias(Array.isArray(cats) ? cats : cats.data ?? [])
     } catch (error) {
       console.error('Erro ao carregar dados:', error)
       setMovimentacoes([])
@@ -215,6 +219,14 @@ const FluxoCaixaTab = ({ onRefresh }) => {
               onChange={(e) =>
                 handleFiltroChange('categoria_id', e.target.value)
               }
+              SelectProps={{
+                MenuProps: {
+                  keepMounted: true,
+                  disablePortal: false,
+                  PaperProps: { sx: { zIndex: 2000, maxHeight: 320 } },
+                },
+                displayEmpty: true,
+              }}
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
             >
               <MenuItem value="">Todas</MenuItem>
@@ -512,32 +524,74 @@ const FluxoCaixaTab = ({ onRefresh }) => {
                 onChange={(e) =>
                   handleFormChange('categoria_id', e.target.value)
                 }
+                onOpen={() => {
+                  try {
+                    console.log('[FluxoCaixa] Abrindo Select de categorias – total:', (categorias || []).length)
+                  } catch (_) {}
+                }}
+                SelectProps={{
+                  MenuProps: {
+                    keepMounted: true,
+                    disablePortal: false,
+                    PaperProps: { sx: { zIndex: 2000, maxHeight: 320 } },
+                  },
+                  displayEmpty: true,
+                }}
                 sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                 helperText={`Categorias disponíveis para ${
                   formData.tipo === 'entrada' ? 'receitas' : 'despesas'
                 }`}
               >
-                {(categorias || [])
-                  .filter(
-                    (cat) =>
-                      cat.tipo ===
-                      (formData.tipo === 'entrada' ? 'receita' : 'despesa')
-                  )
-                  .map((cat) => (
-                    <MenuItem key={cat.id} value={cat.id}>
-                      <Stack direction="row" alignItems="center" spacing={1}>
-                        <span>{cat.icone}</span>
-                        <Box>
-                          <Typography variant="body2" fontWeight={500}>
-                            {cat.nome}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {cat.descricao}
-                          </Typography>
-                        </Box>
-                      </Stack>
-                    </MenuItem>
-                  ))}
+                {(() => {
+                  const tiposEntrada = ['receita', 'entrada', 'income']
+                  const tiposSaida = ['despesa', 'saida', 'expense']
+                  const desejados =
+                    formData.tipo === 'entrada' ? tiposEntrada : tiposSaida
+
+                  const lista = (categorias || []).filter((cat) => {
+                    const tipo = String(cat.tipo || cat.type || '')
+                      .toLowerCase()
+                      .trim()
+                    if (!tipo) return true
+                    return desejados.includes(tipo)
+                  })
+
+                  if (lista.length === 0) {
+                    return (
+                      <MenuItem disabled value="">
+                        Nenhuma categoria disponível
+                      </MenuItem>
+                    )
+                  }
+
+                  return lista.map((cat) => {
+                    const id = cat.id ?? cat.categoria_id ?? cat.value
+                    const nome =
+                      cat.nome ?? cat.name ?? cat.descricao ?? 'Categoria'
+                    const icone = cat.icone ?? cat.icon ?? ''
+                    const descricao = cat.descricao ?? ''
+                    return (
+                      <MenuItem key={id} value={id}>
+                        <Stack direction="row" alignItems="center" spacing={1}>
+                          <span>{icone}</span>
+                          <Box>
+                            <Typography variant="body2" fontWeight={500}>
+                              {nome}
+                            </Typography>
+                            {descricao && (
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                              >
+                                {descricao}
+                              </Typography>
+                            )}
+                          </Box>
+                        </Stack>
+                      </MenuItem>
+                    )
+                  })
+                })()}
               </TextField>
             </Grid>
 

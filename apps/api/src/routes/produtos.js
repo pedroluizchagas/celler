@@ -185,47 +185,7 @@ router.post('/:id/movimentar', async (req, res) => {
 })
 
 // Alertas ativos
-router.get('/alertas', async (_req, res) => {
-  const { data, error } = await supabase
-    .from('alertas_estoque')
-    .select('id, produto_id, tipo, ativo, data_alerta, data_resolvido')
-    .eq('ativo', true)
-    .order('data_alerta', { ascending: false })
-  if (error) return res.status(500).json({ error: error.message })
-
-  const rows = data || []
-  const ids = Array.from(new Set(rows.map((r) => r.produto_id)))
-  let produtosMap = new Map()
-  if (ids.length) {
-    const p = await supabase
-      .from('produtos')
-      .select('id,nome,estoque_atual,estoque_minimo')
-      .in('id', ids)
-    if (!p.error) produtosMap = new Map((p.data || []).map((x) => [x.id, x]))
-  }
-
-  const alertas = rows.map((r) => {
-    const prod = produtosMap.get(r.produto_id)
-    const tipoUi = r.tipo === 'sem_estoque' ? 'estoque_zero' : r.tipo
-    const mensagem = prod
-      ? tipoUi === 'estoque_zero'
-        ? `Produto sem estoque (atual: ${prod.estoque_atual || 0})`
-        : `Estoque baixo (atual: ${prod.estoque_atual || 0}, mínimo: ${prod.estoque_minimo || 0})`
-      : 'Alerta de estoque'
-    return {
-      id: r.id,
-      produto_id: r.produto_id,
-      produto_nome: prod?.nome || `Produto #${r.produto_id}`,
-      tipo: tipoUi,
-      mensagem,
-      ativo: r.ativo,
-      data_alerta: r.data_alerta,
-      data_resolvido: r.data_resolvido,
-    }
-  })
-
-  res.json(alertas)
-})
+// rota '/alertas' consolidada acima
 
 // Resolver alerta
 router.put('/alertas/:id/resolver', async (req, res) => {
@@ -243,18 +203,7 @@ router.put('/alertas/:id/resolver', async (req, res) => {
 })
 
 // Estatísticas simples do estoque
-router.get('/stats', async (_req, res) => {
-  const all = await supabase.from('produtos').select('id, estoque_atual, estoque_minimo')
-  if (all.error) return res.status(500).json({ error: all.error.message })
-  const rows = all.data || []
-  const resumo = {
-    total_produtos: rows.length,
-    sem_estoque: rows.filter((p) => (p.estoque_atual || 0) === 0).length,
-    estoque_baixo: rows.filter((p) => (p.estoque_atual || 0) > 0 && (p.estoque_atual || 0) <= (p.estoque_minimo || 0)).length,
-    disponivel: rows.filter((p) => (p.estoque_atual || 0) > (p.estoque_minimo || 0)).length,
-  }
-  res.json({ resumo })
-})
+// rota '/stats' consolidada acima
 
 function normalizeProduto(body = {}) {
   const toNum = (v, f = 0) => {

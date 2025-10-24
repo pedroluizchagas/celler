@@ -62,24 +62,37 @@ Sistema completo de gestão para assistência técnica de celulares e dispositiv
 
 ## Como Usar
 
-### 1. Iniciar Backend
+Monorepo com workspaces: `apps/api` (backend) e `apps/web` (frontend).
+
+### 1. Pré‑requisitos
+
+- Node.js 20.x (arquivo `.nvmrc` ajuda a fixar a versão)
+- Variáveis de ambiente:
+  - Backend: copie `apps/api/.env.example` para `apps/api/.env` e preencha `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `SUPABASE_DB_SCHEMA=api` (opcional para começar, mas necessário para persistência real).
+  - Frontend: opcionalmente defina `apps/web/.env` com `VITE_API_URL=http://localhost:3001/api`.
+
+### 2. Instalar dependências
 
 ```bash
-cd backend
-npm start
+npm install
 ```
 
-### 2. Iniciar Frontend
+### 3. Iniciar serviços em desenvolvimento
+
+Em dois terminais:
 
 ```bash
-cd frontend
-npm run dev
+# Backend (Express)
+npm run dev:api
+
+# Frontend (Vite)
+npm run dev:web
 ```
 
-### 3. Acessar Sistema
+### 4. Acessar Sistema
 
-- **URL:** http://localhost:5173
-- **API:** http://localhost:3001
+- Frontend: `http://localhost:5173` (ou `http://localhost:3000` conforme Vite)
+- API: `http://localhost:3001/api` (healthcheck em `/api/health`)
 
 
 

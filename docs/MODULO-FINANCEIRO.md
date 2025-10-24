@@ -1,21 +1,15 @@
-# 💰 Módulo Financeiro - Sistema Saymon Cell
+# 💰 Módulo Financeiro
 
-## 📋 Resumo da Implementação
-
-O **Módulo Financeiro** foi implementado com sucesso no Sistema Saymon Cell, fornecendo controle completo sobre o fluxo de caixa, categorias financeiras e movimentações da assistência técnica.
-
-## 🎯 Funcionalidades Implementadas
-
-### 1. **Backend (Node.js + Express + SQLite)**
+## 🎯 Funcionalidades
 
 #### 📊 **Banco de Dados**
 
-- **5 novas tabelas** criadas:
+- **5 tabelas** criadas:
   - `categorias_financeiras` - Categorias de receitas e despesas
-  - `contas_pagar` - Contas a pagar (estrutura preparada)
-  - `contas_receber` - Contas a receber (estrutura preparada)
+  - `contas_pagar` - Contas a pagar 
+  - `contas_receber` - Contas a receber 
   - `fluxo_caixa` - Movimentações financeiras
-  - `metas_financeiras` - Metas financeiras (estrutura preparada)
+  - `metas_financeiras` - Metas financeiras 
 
 #### 🎛️ **Controller (financeiroController.js)**
 
@@ -39,7 +33,7 @@ POST /categorias           - Criar categoria
 
 #### 📈 **Dados Iniciais**
 
-- **10 categorias financeiras** pré-configuradas:
+- **10 categorias financeiras**
   - **Receitas**: Vendas de Produtos, Serviços Técnicos, Outras Receitas
   - **Despesas**: Compra de Estoque, Aluguel, Energia, Internet, Ferramentas, Marketing, Outras
 
@@ -70,9 +64,7 @@ POST /categorias           - Criar categoria
 - **Filtros avançados** por tipo, categoria, período e descrição
 - **Modal responsivo** para adicionar movimentações
 
-## 🚀 Funcionalidades Ativas
-
-### ✅ **Funcionando Agora**
+## 🚀 Funcionalidades
 
 1. **Dashboard Financeiro** - Saldo atual em tempo real
 2. **Categorias Financeiras** - Sistema completo de categorização
@@ -87,40 +79,9 @@ POST /categorias           - Criar categoria
 3. **Relatórios** - Exportação e gráficos detalhados
 4. **Integração** - Automação com vendas e ordens de serviço
 
-## 📊 Estrutura de Dados
-
-### **Fluxo de Caixa**
-
-```sql
-CREATE TABLE fluxo_caixa (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  tipo TEXT NOT NULL CHECK (tipo IN ('entrada', 'saida')),
-  valor DECIMAL(10,2) NOT NULL,
-  categoria_id INTEGER,
-  descricao TEXT,
-  data_movimentacao DATE NOT NULL,
-  origem_tipo TEXT, -- 'manual', 'venda', 'ordem', 'conta_pagar', 'conta_receber'
-  origem_id INTEGER,
-  usuario_id INTEGER,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)
-```
 
 ### **Categorias Financeiras**
 
-```sql
-CREATE TABLE categorias_financeiras (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  nome TEXT NOT NULL UNIQUE,
-  descricao TEXT,
-  tipo TEXT NOT NULL CHECK (tipo IN ('receita', 'despesa')),
-  icone TEXT,
-  cor TEXT,
-  ativo BOOLEAN DEFAULT 1,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)
-```
 
 ## 🎨 Interface Visual
 
@@ -154,25 +115,13 @@ CREATE TABLE categorias_financeiras (
 4. **Filtre** as movimentações usando os campos de filtro
 5. **Navegue** pelas abas para diferentes funcionalidades
 
-## 🔮 Próximos Passos
-
-1. **Implementar** CRUD completo para contas a pagar/receber
-2. **Adicionar** gráficos e relatórios visuais
-3. **Integrar** automaticamente com vendas e ordens
-4. **Criar** sistema de metas financeiras
-5. **Adicionar** exportação para Excel/PDF
-6. **Implementar** notificações de vencimentos
+#
 
 ## 📝 Notas Técnicas
 
-- **Banco**: SQLite com constraints e validações
+- **Banco**: Supabase
 - **API**: RESTful com validações robustas
 - **Frontend**: React com hooks e Material-UI
 - **Logs**: Sistema de auditoria integrado
 - **Responsivo**: Interface adaptável para mobile/desktop
 
----
-
-**Status**: ✅ **MÓDULO FUNCIONAL E PRONTO PARA USO**
-
-O módulo financeiro está operacional e pode ser usado imediatamente para controlar o fluxo de caixa da assistência técnica. As funcionalidades básicas estão completas e funcionando perfeitamente.

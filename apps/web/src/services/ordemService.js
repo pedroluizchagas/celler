@@ -7,7 +7,7 @@ export const ordemService = {
     try {
       const safeFilters = buildSafeFilters(filtros)
       const response = await api.get(`/ordens${buildQuery(safeFilters)}`)
-      return response.data
+      return { data: response.data }
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Erro ao listar ordens')
     }
@@ -17,7 +17,7 @@ export const ordemService = {
   async buscarPorId(id) {
     try {
       const response = await api.get(`/ordens/${id}`)
-      return response.data
+      return { data: response.data }
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Erro ao buscar ordem')
     }
@@ -49,7 +49,7 @@ export const ordemService = {
           'Content-Type': 'multipart/form-data',
         },
       })
-      return response.data
+      return { data: response.data }
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Erro ao criar ordem')
     }
@@ -68,7 +68,7 @@ export const ordemService = {
       }
 
       const response = await api.put(`/ordens/${id}`, dadosOrdem)
-      return response.data
+      return { data: response.data }
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Erro ao atualizar ordem')
     }
@@ -78,7 +78,7 @@ export const ordemService = {
   async excluir(id) {
     try {
       const response = await api.delete(`/ordens/${id}`)
-      return response.data
+      return { data: response.data }
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Erro ao excluir ordem')
     }
@@ -88,7 +88,7 @@ export const ordemService = {
   async buscarEstatisticas() {
     try {
       const response = await api.get('/ordens/stats')
-      return response.data
+      return { data: response.data }
     } catch (error) {
       throw new Error(
         error.response?.data?.error || 'Erro ao buscar estatísticas'
@@ -109,9 +109,19 @@ export const ordemService = {
           'Content-Type': 'multipart/form-data',
         },
       })
-      return response.data
+      return { data: response.data }
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Erro ao adicionar fotos')
+    }
+  },
+
+  // Excluir foto de uma ordem
+  async excluirFoto(id, fotoId) {
+    try {
+      const response = await api.delete(`/ordens/${id}/fotos/${fotoId}`)
+      return { data: response.data }
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Erro ao excluir foto')
     }
   },
 
@@ -120,7 +130,7 @@ export const ordemService = {
     try {
       const safeFilters = buildSafeFilters(filtros)
       const response = await api.get(`/ordens/relatorio${buildQuery(safeFilters)}`)
-      return response.data
+      return { data: response.data }
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Erro ao gerar relatório')
     }
@@ -133,7 +143,7 @@ export const ordemService = {
         status: novoStatus,
         observacoes,
       })
-      return response.data
+      return { data: response.data }
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Erro ao alterar status')
     }
@@ -143,9 +153,19 @@ export const ordemService = {
   async buscarHistorico(id) {
     try {
       const response = await api.get(`/ordens/${id}/historico`)
-      return response.data
+      return { data: response.data }
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Erro ao buscar histórico')
+    }
+  },
+
+  // Buscar fotos da ordem (com URLs públicas/assinadas)
+  async buscarFotos(id) {
+    try {
+      const response = await api.get(`/ordens/${id}/fotos`)
+      return { data: response.data }
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Erro ao buscar fotos')
     }
   },
 }

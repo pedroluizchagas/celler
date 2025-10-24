@@ -72,7 +72,7 @@ function TabPanel({ children, value, index, ...other }) {
   )
 }
 
-function OrdemModal({ open, onClose, ordem = null, onSave }) {
+function OrdemModal({ open, onClose, ordem = null, onSave, onPrint, onPrintLabel }) {
   const [tabAtiva, setTabAtiva] = useState(0)
   const [formData, setFormData] = useState({
     cliente_id: '',
@@ -269,8 +269,8 @@ function OrdemModal({ open, onClose, ordem = null, onSave }) {
   const handleFotosChange = (event) => {
     const files = Array.from(event.target.files)
 
-    if (fotos.length + files.length > 10) {
-      setError('Máximo de 10 fotos permitidas')
+    if (fotos.length + files.length > 5) {
+      setError('Máximo de 5 fotos permitidas')
       return
     }
 
@@ -350,14 +350,146 @@ function OrdemModal({ open, onClose, ordem = null, onSave }) {
     }
   }
 
+  const openPrintWindow = (html) => {
+    const w = window.open('', 'print', 'width=900,height=700')
+    if (!w) return
+    w.document.open()
+    w.document.write(html)
+    w.document.close()
+    // Aguarda render antes de imprimir
+    w.onload = () => {
+      try { w.focus(); } catch {}
+      w.print()
+    }
+  }
+
   const handlePrint = () => {
-    // TODO: Implementar impressão
-    console.log('Imprimir ordem:', ordem?.id)
+    if (!ordem || !ordem.id) {
+      setError('Salve a ordem antes de imprimir o comprovante.')
+      return
+    }
+    const formatDate = (d) => (d ? new Date(d).toLocaleDateString('pt-BR') : '-')
+    const formatMoney = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(v || 0))
+    const html = `
+      <!doctype html>
+      <html lang="pt-BR">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Comprovante OS #${ordem.id}</title>
+          <style>
+            body{font-family: Arial, sans-serif; color:#222; padding:24px}
+            h1{margin:0 0 4px 0}
+            h2{margin:16px 0 8px 0; font-size:16px}
+            .muted{color:#666; font-size:12px}
+            .box{border:1px solid #ddd; border-radius:8px; padding:16px; margin:12px 0}
+            .row{display:flex; gap:16px}
+            .col{flex:1}
+            .tag{display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid #ccc; font-size:12px}
+            .grid{display:grid; grid-template-columns: 1fr 1fr; gap:8px 16px}
+            .label{color:#666; font-size:12px}
+            .value{font-weight:600}
+            @media print { .no-print{ display:none } }
+          </style>
+        </head>
+        <body>
+          <div class="no-print" style="text-align:right; margin-bottom:8px">
+            <button onclick="window.print()">Imprimir</button>
+          </div>
+          <h1>SAYMON CELL</h1>
+          <div class="muted">Assistência Técnica Especializada</div>
+          <div class="box">
+            <div class="row" style="align-items:center; justify-content:space-between">
+              <div>
+                <h2>Ordem de Serviço #${ordem.id}</h2>
+                <div class="muted">Emitido em ${formatDate(new Date())}</div>
+              </div>
+              <div class="tag">Status: ${ordem.status}</div>
+            </div>
+            <div class="grid" style="margin-top:8px">
+              <div><div class="label">Cliente</div><div class="value">${ordem.cliente_nome || '-'}</div></div>
+              <div><div class="label">Telefone</div><div class="value">${ordem.cliente_telefone || '-'}</div></div>
+              <div><div class="label">Entrada</div><div class="value">${formatDate(ordem.data_entrada)}</div></div>
+              <div><div class="label">Técnico</div><div class="value">${ordem.tecnico_responsavel || '-'}</div></div>
+              <div><div class="label">Equipamento</div><div class="value">${ordem.equipamento || '-'}</div></div>
+              <div><div class="label">Marca/Modelo</div><div class="value">${[ordem.marca, ordem.modelo].filter(Boolean).join(' ') || '-'}</div></div>
+              <div><div class="label">Nº Série</div><div class="value">${ordem.numero_serie || '-'}</div></div>
+              <div><div class="label">Prioridade</div><div class="value">${ordem.prioridade || 'normal'}</div></div>
+            </div>
+            <div style="margin-top:12px">
+              <div class="label">Defeito/Problema</div>
+              <div>${ordem.defeito || '-'}</div>
+            </div>
+            ${ordem.diagnostico ? `<div style="margin-top:8px"><div class="label">Diagnóstico</div><div>${ordem.diagnostico}</div></div>` : ''}
+            ${ordem.solucao ? `<div style="margin-top:8px"><div class="label">Solução</div><div>${ordem.solucao}</div></div>` : ''}
+            <div class="row" style="margin-top:12px">
+              <div class="col"><div class="label">Valor Orçamento</div><div class="value">${formatMoney(ordem.valor_orcamento)}</div></div>
+              <div class="col"><div class="label">Valor Final</div><div class="value">${formatMoney(ordem.valor_final)}</div></div>
+            </div>
+          </div>
+          <div class="muted">Assinatura do cliente: ______________________________________</div>
+        </body>
+      </html>
+    `
+    openPrintWindow(html)
   }
 
   const handlePrintLabel = () => {
-    // TODO: Implementar impressão de etiqueta
-    console.log('Imprimir etiqueta:', ordem?.id)
+    if (!ordem || !ordem.id) {
+      setError('Salve a ordem antes de imprimir a etiqueta.')
+      return
+    }
+    const formatDate = (d) => (d ? new Date(d).toLocaleDateString('pt-BR') : '-')
+    const html = `
+      <!doctype html>
+      <html lang="pt-BR">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Etiqueta OS #${ordem.id}</title>
+          <style>
+            body{font-family: Arial, sans-serif; color:#222; padding:16px}
+            .label{width: 90mm; border: 2px solid #1976d2; border-radius: 8px; padding: 12px}
+            .row{display:flex; justify-content:space-between; align-items:center}
+            .big{font-size:20px; font-weight:700; color:#1976d2}
+            .muted{color:#666; font-size:12px}
+            .kv{margin-top:8px}
+            .k{font-size:11px; color:#666}
+            .v{font-size:13px; font-weight:600}
+            @media print { .no-print{ display:none } }
+          </style>
+        </head>
+        <body>
+          <div class="no-print" style="text-align:right; margin-bottom:8px">
+            <button onclick="window.print()">Imprimir</button>
+          </div>
+          <div class="label">
+            <div class="row">
+              <div>
+                <div class="big">SAYMON CELL</div>
+                <div class="muted">Assistência Técnica</div>
+              </div>
+              <div class="big">#${ordem.id}</div>
+            </div>
+            <div class="kv">
+              <div class="k">CLIENTE</div>
+              <div class="v">${ordem.cliente_nome || '-'}</div>
+            </div>
+            <div class="kv">
+              <div class="k">EQUIPAMENTO</div>
+              <div class="v">${ordem.equipamento || '-'}</div>
+            </div>
+            ${ordem.marca || ordem.modelo ? `<div class="kv"><div class="k">MARCA/MODELO</div><div class="v">${[ordem.marca, ordem.modelo].filter(Boolean).join(' ')}</div></div>` : ''}
+            ${ordem.numero_serie ? `<div class="kv"><div class="k">Nº SÉRIE</div><div class="v">${ordem.numero_serie}</div></div>` : ''}
+            <div class="kv">
+              <div class="k">ENTRADA</div>
+              <div class="v">${formatDate(ordem.data_entrada)}</div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `
+    openPrintWindow(html)
   }
 
   return (
@@ -831,7 +963,7 @@ function OrdemModal({ open, onClose, ordem = null, onSave }) {
                       fullWidth
                       sx={{ py: 2 }}
                     >
-                      Adicionar Fotos (máx. 10)
+                      Adicionar Fotos (máx. 5)
                     </Button>
                   </label>
                 </Box>

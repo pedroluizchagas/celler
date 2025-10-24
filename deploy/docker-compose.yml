@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      - PORT=3001
+      - ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5173,http://localhost:3000
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_DB_SCHEMA=api
+      - REQUIRE_AUTH=${REQUIRE_AUTH:-false}
+    ports:
+      - "3001:3001"
+
+  web:
+    build:
+      context: ../apps/web
+      dockerfile: Dockerfile.production
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=/api
+    ports:
+      - "8080:80"

@@ -85,6 +85,8 @@ function Ordens() {
   const [modalOpen, setModalOpen] = useState(false)
   const [ordemEditando, setOrdemEditando] = useState(null)
   const [ordemVisualizando, setOrdemVisualizando] = useState(null)
+  const [fotosVisualizando, setFotosVisualizando] = useState([])
+  const [fotosLoading, setFotosLoading] = useState(false)
   const [comprovanteOpen, setComprovanteOpen] = useState(false)
   const [etiquetaOpen, setEtiquetaOpen] = useState(false)
   const [ordemSelecionada, setOrdemSelecionada] = useState(null)
@@ -186,6 +188,17 @@ function Ordens() {
       const response = await ordemService.buscarPorId(ordem.id)
       console.log('✅ Dados recebidos:', response)
       setOrdemVisualizando(response.data)
+      // Carregar fotos
+      setFotosLoading(true)
+      try {
+        const fotosRes = await ordemService.buscarFotos(ordem.id)
+        setFotosVisualizando(Array.isArray(fotosRes.data) ? fotosRes.data : [])
+      } catch (e) {
+        console.warn('Não foi possível carregar fotos:', e)
+        setFotosVisualizando([])
+      } finally {
+        setFotosLoading(false)
+      }
     } catch (err) {
       console.error('❌ Erro ao buscar ordem:', err)
       setSnackbar({
@@ -223,6 +236,20 @@ function Ordens() {
         message: 'Erro ao carregar dados da ordem',
         severity: 'error',
       })
+    }
+  }
+
+  // Excluir foto da ordem visualizada
+  const handleExcluirFoto = async (foto) => {
+    if (!ordemVisualizando) return
+    const ok = window.confirm('Deseja excluir esta foto?')
+    if (!ok) return
+    try {
+      await ordemService.excluirFoto(ordemVisualizando.id, foto.id)
+      setFotosVisualizando((prev) => prev.filter((f) => f.id !== foto.id))
+      setSnackbar({ open: true, message: 'Foto excluída', severity: 'success' })
+    } catch (err) {
+      setSnackbar({ open: true, message: err.message, severity: 'error' })
     }
   }
 
@@ -577,6 +604,8 @@ function Ordens() {
         onClose={() => setModalOpen(false)}
         ordem={ordemEditando}
         onSave={handleSalvarOrdem}
+        onPrint={handleImprimirComprovante}
+        onPrintLabel={handleImprimirEtiqueta}
       />
 
       {/* Modal de Comprovante */}
@@ -627,7 +656,7 @@ function Ordens() {
       {ordemVisualizando && (
         <Dialog
           open={!!ordemVisualizando}
-          onClose={() => setOrdemVisualizando(null)}
+          onClose={() => { setOrdemVisualizando(null); setFotosVisualizando([]) }}
           maxWidth="md"
           fullWidth
         >
@@ -703,6 +732,49 @@ function Ordens() {
                 <Typography variant="body1" fontWeight="bold">
                   {formatarValor(ordemVisualizando.valor_final)}
                 </Typography>
+              </Grid>
+
+              {/* Galeria de Fotos */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" color="textSecondary" gutterBottom>
+                  Fotos da Ordem
+                </Typography>
+                {fotosLoading ? (
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <CircularProgress size={20} />
+                    <Typography variant="body2" color="textSecondary">Carregando fotos...</Typography>
+                  </Box>
+                ) : fotosVisualizando.length === 0 ? (
+                  <Typography variant="body2" color="textSecondary">
+                    Nenhuma foto enviada para esta ordem.
+                  </Typography>
+                ) : (
+                  <Grid container spacing={2}>
+                    {fotosVisualizando.map((foto) => (
+                      <Grid key={foto.id || foto.path} item xs={6} sm={4} md={3}>
+                        <Box position="relative">
+                          <a href={foto.url || '#'} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+                            <Box
+                              component="img"
+                              src={foto.url}
+                              alt={foto.path}
+                              sx={{
+                                width: '100%',
+                                height: 140,
+                                objectFit: 'cover',
+                                borderRadius: 1,
+                                boxShadow: 1,
+                              }}
+                            />
+                          </a>
+                          <IconButton size="small" onClick={() => handleExcluirFoto(foto)} sx={{ position: 'absolute', top: 6, right: 6, bgcolor: 'rgba(0,0,0,0.5)', color: 'white', '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' } }}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      </Grid>
+                    ))}
+                  </Grid>
+                )}
               </Grid>
             </Grid>
           </DialogContent>

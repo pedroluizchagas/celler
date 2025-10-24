@@ -108,6 +108,21 @@ const produtoService = {
     return response.data?.data || response.data || []
   },
 
+  async criarCategoria(categoria) {
+    const response = await api.post('/categorias', categoria)
+    return response.data
+  },
+
+  async atualizarCategoria(id, categoria) {
+    const response = await api.put(`/categorias/${id}`, categoria)
+    return response.data
+  },
+
+  async desativarCategoria(id) {
+    const response = await api.delete(`/categorias/${id}`)
+    return response.data
+  },
+
   async listarAlertas() {
     const response = await api.get('/produtos/alertas')
     return response.data?.data || response.data || []

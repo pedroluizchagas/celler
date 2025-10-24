@@ -13,6 +13,7 @@ import { router as vendasRouter } from './routes/vendas.js'
 import { router as financeiroRouter } from './routes/financeiro.js'
 import { router as backupRouter } from './routes/backup.js'
 import { router as billingRouter } from './routes/billing.js'
+import { requireAuth } from './middleware/auth.js'
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' })
 const app = express()
@@ -46,6 +47,23 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'api', time: new Date().toISOString() })
 })
 
+// Auth opcional para métodos mutativos
+const REQUIRE_AUTH = String(process.env.REQUIRE_AUTH || 'false').toLowerCase() === 'true'
+function isPublicPath(pathname) {
+  return (
+    pathname === '/api/health' ||
+    pathname.startsWith('/api/backup') ||
+    pathname.startsWith('/api/billing') ||
+    pathname.startsWith('/uploads')
+  )
+}
+if (REQUIRE_AUTH) {
+  app.use(async (req, res, next) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || isPublicPath(req.path)) return next()
+    return requireAuth(req, res, next)
+  })
+}
+
 // Routers (skeleton)
 app.use('/api/clientes', clientesRouter)
 app.use('/api/ordens', ordensRouter)
@@ -73,3 +91,5 @@ const port = parseInt(process.env.PORT || '3001', 10)
 app.listen(port, () => {
   logger.info({ port }, 'API listening')
 })
+
+export { app }

@@ -1,6 +1,6 @@
-# 📦 Sistema de Gestão de Estoque - Saymon Cell
+# 📦 Sistema de Gestão de Estoque
 
-## 🚀 **Funcionalidades Implementadas**
+## 🚀 **Funcionalidades**
 
 ### ✅ **1. Gestão de Produtos**
 
@@ -51,13 +51,13 @@
 
 #### `categorias`
 
-```sql
+```
 id, nome, descricao, icone, ativo, created_at, updated_at
 ```
 
 #### `produtos`
 
-```sql
+```
 id, nome, descricao, codigo_barras, codigo_interno, categoria_id,
 fornecedor_id, tipo, preco_custo, preco_venda, margem_lucro,
 estoque_atual, estoque_minimo, estoque_maximo, localizacao,
@@ -66,7 +66,7 @@ observacoes, ativo, created_at, updated_at
 
 #### `movimentacoes_estoque`
 
-```sql
+```
 id, produto_id, tipo, quantidade, quantidade_anterior, quantidade_atual,
 preco_unitario, valor_total, motivo, referencia_id, referencia_tipo,
 observacoes, usuario, data_movimentacao
@@ -74,20 +74,20 @@ observacoes, usuario, data_movimentacao
 
 #### `vendas`
 
-```sql
+```
 id, cliente_id, numero_venda, tipo_pagamento, desconto, valor_total,
 observacoes, data_venda, created_at
 ```
 
 #### `venda_itens`
 
-```sql
+```
 id, venda_id, produto_id, quantidade, preco_unitario, preco_total
 ```
 
 #### `alertas_estoque`
 
-```sql
+```
 id, produto_id, tipo, ativo, data_alerta, data_resolvido
 ```
 
@@ -269,7 +269,7 @@ http://localhost:5173/estoque
 
 ---
 
-## 🎉 **Benefícios Implementados**
+## 🎉 **Benefícios**
 
 ### **✅ Para o Negócio**
 
@@ -289,4 +289,4 @@ http://localhost:5173/estoque
 
 ---
 
-**© 2025 Saymon Cell - Sistema de Gestão de Estoque Integrado**
+**© 2025 Celler**
